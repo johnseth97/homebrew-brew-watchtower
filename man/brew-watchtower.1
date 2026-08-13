@@ -1,4 +1,4 @@
-.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.2.2" "User Commands"
+.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.3.0" "User Commands"
 .SH NAME
 brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
 .SH SYNOPSIS
@@ -74,6 +74,16 @@ members are left pending and a macOS notification is generated.
 Display the last recorded result and pending interactive items. If
 .I GROUP
 is omitted, display status for every group that has run.
+.TP
+.B drift
+Check the entire configured Brewfile with
+.BR "brew bundle check" .
+The result is recorded for
+.B blurb
+without running
+.B "brew update"
+or processing any Watchtower group. This command exits non-zero when drift is
+found.
 .TP
 .B blurb
 Print a compact shell-start status line when configured state is actionable.

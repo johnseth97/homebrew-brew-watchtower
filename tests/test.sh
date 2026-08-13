@@ -5,8 +5,12 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.2.2" ]
+[ "$output" = "brew-watchtower 0.3.0" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
+"$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
+for completion in completions/brew-watchtower.bash completions/_brew-watchtower; do
+  [ -f "$repo_root/$completion" ]
+done
 for module in policy runtime scheduler updates; do
   [ -f "$repo_root/lib/$module.sh" ]
 done

@@ -14,6 +14,8 @@ import tarfile
 ROOT = Path(__file__).resolve().parent.parent
 FILES = (
     ("bin/brew-watchtower", 0o755),
+    ("completions/brew-watchtower.bash", 0o644),
+    ("completions/_brew-watchtower", 0o644),
     ("lib/policy.sh", 0o644),
     ("lib/runtime.sh", 0o644),
     ("lib/scheduler.sh", 0o644),

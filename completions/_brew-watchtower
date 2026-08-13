@@ -1,0 +1,48 @@
+#compdef brew-watchtower
+
+_brew_watchtower_groups() {
+  local -a groups
+  groups=( "${(@f)$(brew-watchtower groups 2>/dev/null | awk '{print $1}')}" )
+  _describe -t groups 'Watchtower group' groups
+}
+
+_brew-watchtower() {
+  local -a commands
+  commands=(
+    'groups:list configured groups'
+    'list:list group items'
+    'add:add or update a group item'
+    'remove:remove a group item'
+    'check:check one group for updates'
+    'run:upgrade eligible items in one group'
+    'status:show recorded status'
+    'drift:check the configured Brewfile without updating Homebrew'
+    'blurb:print shell-start status'
+    'config:inspect or create user configuration'
+    'setup:install or refresh protected runtime'
+    'schedule:create a daily group schedule'
+    'version:print version'
+    'help:show help'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe -t commands command commands
+    return
+  fi
+
+  case "$words[2]" in
+    check|run|status) _brew_watchtower_groups ;;
+    remove) (( CURRENT == 3 )) && _brew_watchtower_groups ;;
+    add)
+      case $CURRENT in
+        3) _brew_watchtower_groups ;;
+        4) _values 'package type' formula cask ;;
+        6) _values 'update mode' auto interactive ;;
+      esac
+      ;;
+    config) _values 'config command' init show path ;;
+    schedule) (( CURRENT == 3 )) && _brew_watchtower_groups ;;
+  esac
+}
+
+_brew-watchtower "$@"

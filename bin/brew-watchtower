@@ -5,7 +5,7 @@ set -u
 umask 077
 
 readonly PROGRAM="brew-watchtower"
-readonly VERSION="0.2.2"
+readonly VERSION="0.3.0"
 readonly BREW="/opt/homebrew/bin/brew"
 readonly POLICY_ROOT="/Library/Application Support/Homebrew AutoUpdate"
 readonly GROUP_DIR="$POLICY_ROOT/groups"
@@ -39,6 +39,7 @@ case "$command" in
   check) [ $# -eq 1 ] || die "check requires GROUP"; cmd_check_or_run check "$1" ;;
   run) [ $# -eq 1 ] || die "run requires GROUP"; cmd_check_or_run run "$1" ;;
   status) [ $# -le 1 ] || die "status takes at most one group"; cmd_status "$@" ;;
+  drift) [ $# -eq 0 ] || die "drift takes no arguments"; cmd_drift ;;
   blurb) [ $# -eq 0 ] || die "blurb takes no arguments"; cmd_blurb ;;
 config)
   [ $# -eq 1 ] || die "config requires: init, show, or path"

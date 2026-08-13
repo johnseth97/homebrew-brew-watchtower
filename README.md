@@ -116,6 +116,16 @@ Drift checks and generated exports run during a scheduled Watchtower
 separate `export_path` (default: `~/.config/brew-watchtower/Brewfile.generated`)
 and never overwrites the curated `brewfile` path.
 
+Run a manual, no-update drift check at any time:
+
+```bash
+brew-watchtower drift
+```
+
+It runs `brew bundle check` against the configured Brewfile, records the result
+for `brew-watchtower blurb`, and exits nonzero when the manifest does not match.
+It does not run `brew update`, modify packages, or inspect Watchtower groups.
+
 Remove an item:
 
 ```bash
@@ -133,12 +143,21 @@ brew-watchtower remove security firefox
 | `brew-watchtower check GROUP` | Refresh metadata and report outdated entries |
 | `brew-watchtower run GROUP` | Upgrade eligible entries |
 | `brew-watchtower status [GROUP]` | Show last-run state and pending interactive items |
+| `brew-watchtower drift` | Check the entire configured Brewfile without `brew update` or group processing |
 | `brew-watchtower blurb` | Print a fast, actionable shell-start status line |
 | `brew-watchtower config init` | Create a missing default user config |
 | `brew-watchtower config show` | Print effective user config values |
 | `brew-watchtower config path` | Print the user config path |
 | `brew-watchtower schedule GROUP HOUR MINUTE` | Create or replace a daily schedule |
 | `brew-watchtower setup [HOUR [MINUTE]]` | Install or refresh the protected runtime |
+
+### Shell completion
+
+Bash and Zsh completions install with the formula. Start a new shell after
+installation, or reload completion support (`autoload -Uz compinit && compinit`
+in Zsh). Tab completion covers top-level commands, config subcommands, package
+types/modes, and existing Watchtower group names. Completion queries group names
+only; it does not update Homebrew.
 
 Full documentation is included:
 
@@ -222,7 +241,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported version
 ## Development
 
 ```bash
-make verify-release VERSION=0.2.2
+make verify-release VERSION=0.3.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and

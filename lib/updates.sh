@@ -54,6 +54,39 @@ record_brewfile_state() {
 }
 
 
+cmd_drift() {
+  [ $# -eq 0 ] || die "drift takes no arguments"
+  require_user_runtime
+  statusfile="$STATE_DIR/drift.status"
+  load_config
+
+  printf 'last_run=%s\nresult=success\npending_interactive=\n' "$(date +%s)" > "$statusfile"
+  record_brewfile_state "$statusfile"
+  drift=$(awk -F= '$1 == "brewfile_drift" { print $2; exit }' "$statusfile")
+
+  case "$drift" in
+    clean)
+      printf 'Brewfile matches installed Homebrew state: %s\n' "$brewfile"
+      ;;
+    detected)
+      printf 'Brewfile drift detected: %s\n' "$brewfile" >&2
+      printf 'Run: %s bundle check --file %s --verbose\n' "$BREW" "$brewfile" >&2
+      return 1
+      ;;
+    unavailable)
+      printf 'Configured Brewfile is unavailable: %s\n' "$brewfile" >&2
+      return 2
+      ;;
+    disabled)
+      printf 'Brewfile drift checking is disabled in %s\n' "$CONFIG_FILE"
+      ;;
+    *)
+      printf 'Unable to determine Brewfile drift state.\n' >&2
+      return 2
+      ;;
+  esac
+}
+
 cmd_blurb() {
   [ $# -eq 0 ] || die "blurb takes no arguments"
   load_config

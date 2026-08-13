@@ -11,6 +11,7 @@ Usage:
   brew-watchtower check GROUP
   brew-watchtower run GROUP
   brew-watchtower status [GROUP]
+  brew-watchtower drift
   brew-watchtower blurb
   brew-watchtower config init
   brew-watchtower setup [HOUR [MINUTE]]
