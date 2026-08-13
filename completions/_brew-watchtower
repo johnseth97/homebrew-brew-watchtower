@@ -6,6 +6,13 @@ _brew_watchtower_groups() {
   _describe -t groups 'Watchtower group' groups
 }
 
+_brew_watchtower_backups() {
+  local brewfile
+  brewfile=$(brew-watchtower config show 2>/dev/null | awk -F= '$1 == "brewfile" { print $2; exit }')
+  [ -n "$brewfile" ] || return 1
+  _files -W "${brewfile:h}" -g "${brewfile:t}.backup-*"
+}
+
 _brew-watchtower() {
   local -a commands
   commands=(
@@ -16,7 +23,7 @@ _brew-watchtower() {
     'check:check one group for updates'
     'run:upgrade eligible items in one group'
     'status:show recorded status'
-    'drift:check the configured Brewfile without updating Homebrew'
+    'drift:check, repair, or restore the configured Brewfile'
     'blurb:print shell-start status'
     'config:inspect or create user configuration'
     'setup:install or refresh protected runtime'
@@ -38,6 +45,17 @@ _brew-watchtower() {
         3) _brew_watchtower_groups ;;
         4) _values 'package type' formula cask ;;
         6) _values 'update mode' auto interactive ;;
+      esac
+      ;;
+    drift)
+      case $CURRENT in
+        3) _values 'drift command' fix restore ;;
+        4)
+          case "$words[3]" in
+            fix) _values 'option' --clobber ;;
+            restore) _brew_watchtower_backups ;;
+          esac
+          ;;
       esac
       ;;
     config) _values 'config command' init show path ;;

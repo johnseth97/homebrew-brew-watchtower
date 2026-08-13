@@ -87,6 +87,79 @@ cmd_drift() {
   esac
 }
 
+drift_backup_name() {
+  printf '%s.backup-%s' "$(basename "$brewfile")" "$(date '+%Y%m%d-%H%M%S')"
+}
+
+
+drift_backup_path() {
+  backup_dir=$(dirname "$brewfile")
+  backup_name=$(drift_backup_name)
+  backup_path="$backup_dir/$backup_name"
+  backup_index=1
+  while [ -e "$backup_path" ]; do
+    backup_path="$backup_dir/$backup_name-$backup_index"
+    backup_index=$((backup_index + 1))
+  done
+  printf '%s\n' "$backup_path"
+}
+
+
+drift_backup_file() {
+  source_file=$1
+  [ -f "$source_file" ] || return 1
+  backup_path=$(drift_backup_path)
+  cp -p "$source_file" "$backup_path" || return 1
+  printf '%s\n' "$backup_path"
+}
+
+
+refresh_drift_status() {
+  statusfile="$STATE_DIR/drift.status"
+  printf 'last_run=%s\nresult=success\npending_interactive=\n' "$(date +%s)" > "$statusfile"
+  record_brewfile_state "$statusfile"
+}
+
+
+cmd_drift_fix() {
+  mode=$1
+  require_user_runtime
+  load_config
+  [ -f "$brewfile" ] || die "configured Brewfile is unavailable: $brewfile"
+
+  if [ "$mode" = backup ]; then
+    backup_path=$(drift_backup_file "$brewfile") || die "could not back up Brewfile: $brewfile"
+    printf 'Backed up %s to %s\n' "$brewfile" "$backup_path"
+  fi
+
+  HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$brewfile" || die "could not write Brewfile: $brewfile"
+  refresh_drift_status
+  printf 'Replaced %s with the current Homebrew bundle.\n' "$brewfile"
+}
+
+
+cmd_drift_restore() {
+  backup_name=$1
+  require_user_runtime
+  load_config
+  case "$backup_name" in
+    "$(basename "$brewfile").backup-"*) ;;
+    *) die "backup must be a sibling filename beginning $(basename "$brewfile").backup-" ;;
+  esac
+  case "$backup_name" in *'/'*|*'..'*) die "invalid backup filename: $backup_name" ;; esac
+  backup_path="$(dirname "$brewfile")/$backup_name"
+  [ -f "$backup_path" ] || die "backup does not exist: $backup_path"
+
+  if [ -f "$brewfile" ]; then
+    current_backup=$(drift_backup_file "$brewfile") || die "could not back up current Brewfile: $brewfile"
+    printf 'Backed up current %s to %s\n' "$brewfile" "$current_backup"
+  fi
+  cp -p "$backup_path" "$brewfile" || die "could not restore Brewfile from: $backup_path"
+  refresh_drift_status
+  printf 'Restored %s from %s\n' "$brewfile" "$backup_path"
+}
+
+
 cmd_blurb() {
   [ $# -eq 0 ] || die "blurb takes no arguments"
   load_config

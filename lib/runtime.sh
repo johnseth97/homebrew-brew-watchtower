@@ -12,6 +12,8 @@ Usage:
   brew-watchtower run GROUP
   brew-watchtower status [GROUP]
   brew-watchtower drift
+  brew-watchtower drift fix [--clobber]
+  brew-watchtower drift restore BACKUP
   brew-watchtower blurb
   brew-watchtower config init
   brew-watchtower setup [HOUR [MINUTE]]
@@ -27,6 +29,8 @@ Examples:
   brew-watchtower check security
   brew-watchtower run security
   brew-watchtower remove security tailscale-app
+  brew-watchtower drift fix
+  brew-watchtower drift restore Brewfile.backup-20260813-180000
   brew-watchtower setup 9 30
 EOF
 }

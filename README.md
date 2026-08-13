@@ -126,6 +126,24 @@ It runs `brew bundle check` against the configured Brewfile, records the result
 for `brew-watchtower blurb`, and exits nonzero when the manifest does not match.
 It does not run `brew update`, modify packages, or inspect Watchtower groups.
 
+To replace a drifted Brewfile with Homebrew's current bundle, use:
+
+```bash
+brew-watchtower drift fix
+```
+
+This first preserves the curated file beside it as a timestamped sibling such as
+`Brewfile.backup-20260813-180000`, then runs `brew bundle dump --force` into the
+configured `brewfile`. This is a machine snapshot, so review it before treating
+it as your curated cross-machine manifest. `drift fix --clobber` skips the
+backup. To put a saved file back, pass its filename (not a path):
+
+```bash
+brew-watchtower drift restore Brewfile.backup-20260813-180000
+```
+
+Restore also creates a timestamped backup of the currently active Brewfile.
+
 Remove an item:
 
 ```bash
@@ -144,6 +162,8 @@ brew-watchtower remove security firefox
 | `brew-watchtower run GROUP` | Upgrade eligible entries |
 | `brew-watchtower status [GROUP]` | Show last-run state and pending interactive items |
 | `brew-watchtower drift` | Check the entire configured Brewfile without `brew update` or group processing |
+| `brew-watchtower drift fix [--clobber]` | Dump current Homebrew state into the configured Brewfile, saving a timestamped backup unless clobbered |
+| `brew-watchtower drift restore BACKUP` | Restore a timestamped sibling backup while preserving the current file |
 | `brew-watchtower blurb` | Print a fast, actionable shell-start status line |
 | `brew-watchtower config init` | Create a missing default user config |
 | `brew-watchtower config show` | Print effective user config values |
@@ -155,8 +175,8 @@ brew-watchtower remove security firefox
 
 Bash and Zsh completions install with the formula. Start a new shell after
 installation, or reload completion support (`autoload -Uz compinit && compinit`
-in Zsh). Tab completion covers top-level commands, config subcommands, package
-types/modes, and existing Watchtower group names. Completion queries group names
+in Zsh). Tab completion covers top-level commands, config and drift subcommands, package
+types/modes, timestamped Brewfile backups, and existing Watchtower group names. Completion queries group names
 only; it does not update Homebrew.
 
 Full documentation is included:
@@ -241,7 +261,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported version
 ## Development
 
 ```bash
-make verify-release VERSION=0.3.0
+make verify-release VERSION=0.4.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and

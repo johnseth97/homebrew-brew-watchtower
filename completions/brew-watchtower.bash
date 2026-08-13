@@ -3,6 +3,15 @@ _brew_watchtower_groups() {
   brew-watchtower groups 2>/dev/null | awk '{print $1}'
 }
 
+_brew_watchtower_backups() {
+  local brewfile backup_dir backup_base
+  brewfile="$(brew-watchtower config show 2>/dev/null | awk -F= '$1 == "brewfile" { print $2; exit }')"
+  [[ -n $brewfile ]] || return
+  backup_dir="$(dirname "$brewfile")"
+  backup_base="$(basename "$brewfile").backup-"
+  find "$backup_dir" -maxdepth 1 -type f -name "${backup_base}*" -exec basename {} \; 2>/dev/null
+}
+
 _brew_watchtower() {
   local cur prev command
   COMPREPLY=()
@@ -30,6 +39,16 @@ _brew_watchtower() {
         3) COMPREPLY=( $(compgen -W 'formula cask' -- "$cur") ) ;;
         5) COMPREPLY=( $(compgen -W 'auto interactive' -- "$cur") ) ;;
       esac
+      ;;
+    drift)
+      if [[ $COMP_CWORD -eq 2 ]]; then
+        COMPREPLY=( $(compgen -W 'fix restore' -- "$cur") )
+      elif [[ $COMP_CWORD -eq 3 ]]; then
+        case "${COMP_WORDS[2]}" in
+          fix) COMPREPLY=( $(compgen -W '--clobber' -- "$cur") ) ;;
+          restore) COMPREPLY=( $(compgen -W "$(_brew_watchtower_backups)" -- "$cur") ) ;;
+        esac
+      fi
       ;;
     config)
       COMPREPLY=( $(compgen -W 'init show path' -- "$cur") )

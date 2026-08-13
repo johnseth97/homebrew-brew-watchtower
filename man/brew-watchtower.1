@@ -1,4 +1,4 @@
-.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.3.0" "User Commands"
+.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.4.0" "User Commands"
 .SH NAME
 brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
 .SH SYNOPSIS
@@ -84,6 +84,21 @@ without running
 .B "brew update"
 or processing any Watchtower group. This command exits non-zero when drift is
 found.
+.TP
+.BI "drift fix " [ --clobber ]
+Replace the configured Brewfile with a current
+.BR "brew bundle dump" .
+By default, the existing Brewfile is first saved beside it as
+.IR Brewfile.backup-YYYYmmdd-HHMMSS .
+.B --clobber
+skips that backup.
+.TP
+.BI "drift restore " BACKUP
+Restore a sibling backup created by
+.BR "drift fix" .
+The current Brewfile is first saved as a new timestamped backup.
+.I BACKUP
+must be the backup filename, not a path.
 .TP
 .B blurb
 Print a compact shell-start status line when configured state is actionable.
