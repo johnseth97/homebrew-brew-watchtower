@@ -65,6 +65,34 @@ brew-watchtower run security
 brew-watchtower status security
 ```
 
+## Shell status blurb and Brewfile drift
+
+Watchtower can print a compact, actionable status line when a shell starts. The
+blurb only reads the small Watchtower status files; it never invokes Homebrew,
+Git, or the network at shell startup.
+
+Create the user-owned configuration once:
+
+```bash
+brew-watchtower config init
+```
+
+Then opt in from `.zshrc` near the top, after `PATH` makes Homebrew available:
+
+```zsh
+brew-watchtower blurb
+```
+
+The default `~/.config/brew-watchtower/config` shows only actionable state:
+failed groups, pending interactive upgrades, or Brewfile drift. Configure
+`blurb=always` or `blurb=never`, choose a `prefix`, enable or disable
+`detect_brewfile_drift`, and optionally set `export_brewfile=1`.
+
+Drift checks and generated exports run during a scheduled Watchtower
+`check`/`run`, not during shell startup. An export is always written to the
+separate `export_path` (default: `~/.config/brew-watchtower/Brewfile.generated`)
+and never overwrites the curated `brewfile` path.
+
 Remove an item:
 
 ```bash

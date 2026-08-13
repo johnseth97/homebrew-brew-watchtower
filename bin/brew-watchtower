@@ -14,6 +14,8 @@ readonly STATE_DIR="$USER_HOME/Library/Application Support/Homebrew AutoUpdate"
 readonly LOG_DIR="$USER_HOME/Library/Logs/Homebrew AutoUpdate"
 readonly CACHE_DIR="$USER_HOME/Library/Caches/Homebrew AutoUpdate"
 readonly LOCK_DIR="$CACHE_DIR/update.lock"
+readonly CONFIG_DIR="$USER_HOME/.config/brew-watchtower"
+readonly CONFIG_FILE="$CONFIG_DIR/config"
 
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOMEBREW_NO_ANALYTICS=1
@@ -31,6 +33,8 @@ Usage:
   brew-watchtower check GROUP
   brew-watchtower run GROUP
   brew-watchtower status [GROUP]
+  brew-watchtower blurb
+  brew-watchtower config init
   brew-watchtower setup [HOUR [MINUTE]]
   brew-watchtower schedule GROUP HOUR MINUTE
   brew-watchtower version
@@ -47,6 +51,59 @@ Examples:
   brew-watchtower setup 9 30
 EOF
 }
+# This config is deliberately parsed, never sourced. It controls only the
+# user-owned presentation/export layer; root-owned update policy remains in
+# GROUP_DIR. See `brew-watchtower config init` for the documented defaults.
+load_config() {
+  blurb=actionable
+  prefix='⛫ Watchtower'
+  detect_brewfile_drift=1
+  brewfile="$USER_HOME/.dotfiles/macos/Brewfile"
+  export_brewfile=0
+  export_path="$CONFIG_DIR/Brewfile.generated"
+
+  [ -f "$CONFIG_FILE" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key=${line%%=*}
+    value=${line#*=}
+    [ "$key" != "$line" ] || continue
+    case "$key" in
+      blurb) case "$value" in actionable|always|never) blurb=$value ;; esac ;;
+      prefix) [ -n "$value" ] && prefix=$value ;;
+      detect_brewfile_drift) case "$value" in 0|1) detect_brewfile_drift=$value ;; esac ;;
+      export_brewfile) case "$value" in 0|1) export_brewfile=$value ;; esac ;;
+      brewfile|export_path)
+        case "$value" in '~/'*) value="$USER_HOME/${value#~/}" ;; esac
+        case "$value" in /*)
+          if [ "$key" = brewfile ]; then brewfile=$value; else export_path=$value; fi
+          ;;
+        esac
+        ;;
+    esac
+  done < "$CONFIG_FILE"
+}
+
+cmd_config_init() {
+  [ $# -eq 0 ] || die "config init takes no arguments"
+  mkdir -p "$CONFIG_DIR"
+  chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+  [ ! -e "$CONFIG_FILE" ] || die "config already exists: $CONFIG_FILE"
+  cat > "$CONFIG_FILE" <<EOF
+# Watchtower shell status and Brewfile drift settings.
+# The shell prompt command only reads this file and Watchtower status files.
+blurb=actionable
+prefix=⛫ Watchtower
+detect_brewfile_drift=1
+brewfile=$USER_HOME/.dotfiles/macos/Brewfile
+# Export always writes a generated snapshot, never the curated Brewfile above.
+export_brewfile=0
+export_path=$CONFIG_DIR/Brewfile.generated
+EOF
+  chmod 600 "$CONFIG_FILE"
+  printf 'Created %s\n' "$CONFIG_FILE"
+}
+
 
 die() {
   echo "$PROGRAM: $*" >&2
@@ -294,6 +351,74 @@ outdated_token() {
   esac
 }
 
+record_brewfile_state() {
+  statusfile=$1
+  load_config
+  drift=disabled
+  exported=disabled
+
+  if [ "$detect_brewfile_drift" = 1 ]; then
+    if [ ! -f "$brewfile" ]; then
+      drift=unavailable
+    elif HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle check --file "$brewfile" >/dev/null 2>&1; then
+      drift=clean
+    else
+      drift=detected
+    fi
+  fi
+
+  if [ "$export_brewfile" = 1 ]; then
+    mkdir -p "$(dirname "$export_path")"
+    if HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$export_path" >/dev/null 2>&1; then
+      chmod 600 "$export_path" 2>/dev/null || true
+      exported=success
+    else
+      exported=failed
+    fi
+  fi
+
+  printf 'brewfile_checked=%s\nbrewfile_drift=%s\nbrewfile_export=%s\n' "$(date +%s)" "$drift" "$exported" >> "$statusfile"
+}
+
+cmd_blurb() {
+  [ $# -eq 0 ] || die "blurb takes no arguments"
+  load_config
+  [ "$blurb" != never ] || return 0
+
+  messages=""
+  newest=0
+  found=0
+  drift_reported=0
+  for file in "$STATE_DIR"/*.status; do
+    [ -f "$file" ] || continue
+    found=1
+    group=$(basename "$file" .status)
+    result=$(awk -F= '$1 == "result" { print $2; exit }' "$file")
+    pending=$(awk -F= '$1 == "pending_interactive" { print $2; exit }' "$file")
+    drift=$(awk -F= '$1 == "brewfile_drift" { print $2; exit }' "$file")
+    last_run=$(awk -F= '$1 == "last_run" { print $2; exit }' "$file")
+    case "$last_run" in ''|*[!0-9]*) ;; *) [ "$last_run" -gt "$newest" ] && newest=$last_run ;; esac
+    [ "$result" = failed ] && messages="$messages; $group failed"
+    [ -n "$pending" ] && messages="$messages; $group: update $pending"
+    if [ "$drift" = detected ] && [ "$drift_reported" = 0 ]; then
+      messages="$messages; Brewfile drift detected"
+      drift_reported=1
+    fi
+  done
+
+  if [ -n "$messages" ]; then
+    printf '%s: %s\n' "$prefix" "${messages#; }"
+  elif [ "$blurb" = always ]; then
+    if [ "$found" = 0 ]; then
+      printf '%s: no scheduled runs recorded\n' "$prefix"
+    elif [ "$newest" -gt 0 ]; then
+      printf '%s: all clear (last check %s)\n' "$prefix" "$(date -r "$newest" '+%Y-%m-%d %H:%M')"
+    else
+      printf '%s: all clear\n' "$prefix"
+    fi
+  fi
+}
+
 cmd_check_or_run() {
   action=$1 group=$2
   valid_group "$group" || die "invalid group name: $group"
@@ -309,6 +434,7 @@ cmd_check_or_run() {
 
   if ! "$BREW" update; then
     printf 'last_run=%s\nresult=failed\nreason=brew_update\n' "$(date +%s)" > "$statusfile"
+    record_brewfile_state "$statusfile"
     notify "Homebrew AutoUpdate failed" "$group: brew update failed"
     return 1
   fi
@@ -361,6 +487,7 @@ EOF
     return 1
   fi
   printf 'last_run=%s\nresult=success\npending_interactive=%s\n' "$now" "${pending_interactive# }" > "$statusfile"
+  record_brewfile_state "$statusfile"
   if [ -n "$pending_interactive" ]; then
     notify "Homebrew updates need attention" "$group:${pending_interactive}; run brew-watchtower run $group"
   fi
@@ -401,6 +528,8 @@ case "$command" in
   check) [ $# -eq 1 ] || die "check requires GROUP"; cmd_check_or_run check "$1" ;;
   run) [ $# -eq 1 ] || die "run requires GROUP"; cmd_check_or_run run "$1" ;;
   status) [ $# -le 1 ] || die "status takes at most one group"; cmd_status "$@" ;;
+  blurb) [ $# -eq 0 ] || die "blurb takes no arguments"; cmd_blurb ;;
+  config) [ $# -eq 1 ] && [ "$1" = init ] || die "config requires: init"; cmd_config_init ;;
   setup) cmd_setup "$@" ;;
   schedule) cmd_schedule "$@" ;;
   __setup) cmd_setup_internal "$@" ;;

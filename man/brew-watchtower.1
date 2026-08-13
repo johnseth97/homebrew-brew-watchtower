@@ -75,6 +75,15 @@ Display the last recorded result and pending interactive items. If
 .I GROUP
 is omitted, display status for every group that has run.
 .TP
+.B blurb
+Print a compact shell-start status line when configured state is actionable.
+This command reads only the user-owned Watchtower configuration and status
+files; it never invokes Homebrew, Git, or the network.
+.TP
+.B config init
+Create the default user-owned configuration file at
+.I ~/.config/brew-watchtower/config .
+.TP
 .B setup [HOUR [MINUTE]]
 Install or refresh the protected root-owned runtime, create the security group
 if it does not exist, and install its user LaunchAgent. The default daily
@@ -198,6 +207,13 @@ Blank lines and lines beginning with a number sign are ignored. Group files are
 never sourced or evaluated as shell code. Group names and all fields are
 validated before use.
 .SH FILES
+.TP
+.B ~/.config/brew-watchtower/config
+User-owned shell blurb, Brewfile drift, and generated-export settings.
+.TP
+.B ~/.config/brew-watchtower/Brewfile.generated
+Optional generated snapshot of the installed Homebrew bundle. This never
+replaces the curated Brewfile.
 .TP
 .B /Library/Application Support/Homebrew AutoUpdate/bin/autoupdate
 Root-owned implementation used by both the command-line symlink and launchd.
