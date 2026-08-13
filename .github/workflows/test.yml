@@ -1,0 +1,21 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make verify-release VERSION=0.1.0
+      - name: Audit tap formula
+        run: |
+          brew tap johnseth97/brew-watchtower "$PWD"
+          brew trust --formula johnseth97/brew-watchtower/brew-watchtower
+          brew audit --formula johnseth97/brew-watchtower/brew-watchtower

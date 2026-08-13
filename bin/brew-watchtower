@@ -1,0 +1,411 @@
+#!/bin/bash
+# Homebrew AutoUpdate controller for macOS (compatible with Bash 3.2).
+
+set -u
+umask 077
+
+readonly PROGRAM="brew-watchtower"
+readonly VERSION="0.1.0"
+readonly BREW="/opt/homebrew/bin/brew"
+readonly POLICY_ROOT="/Library/Application Support/Homebrew AutoUpdate"
+readonly GROUP_DIR="$POLICY_ROOT/groups"
+readonly USER_HOME="${HOME}"
+readonly STATE_DIR="$USER_HOME/Library/Application Support/Homebrew AutoUpdate"
+readonly LOG_DIR="$USER_HOME/Library/Logs/Homebrew AutoUpdate"
+readonly CACHE_DIR="$USER_HOME/Library/Caches/Homebrew AutoUpdate"
+readonly LOCK_DIR="$CACHE_DIR/update.lock"
+
+export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_NO_ENV_HINTS=1
+export HOMEBREW_NO_INSTALL_CLEANUP=1
+export NONINTERACTIVE=1
+
+usage() {
+  cat <<'EOF'
+Usage:
+  brew-watchtower groups
+  brew-watchtower list [GROUP]
+  brew-watchtower add GROUP TYPE TOKEN [MODE]
+  brew-watchtower remove GROUP TOKEN
+  brew-watchtower check GROUP
+  brew-watchtower run GROUP
+  brew-watchtower status [GROUP]
+  brew-watchtower setup [HOUR [MINUTE]]
+  brew-watchtower schedule GROUP HOUR MINUTE
+  brew-watchtower version
+
+TYPE: formula | cask
+MODE: auto | interactive   (default: auto)
+
+Examples:
+  brew-watchtower add security cask tailscale-app interactive
+  brew-watchtower list security
+  brew-watchtower check security
+  brew-watchtower run security
+  brew-watchtower remove security tailscale-app
+  brew-watchtower setup 9 30
+EOF
+}
+
+die() {
+  echo "$PROGRAM: $*" >&2
+  exit 1
+}
+
+valid_group() {
+  case "$1" in
+    ''|*[!a-z0-9_-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+valid_token() {
+  case "$1" in
+    ''|*[!A-Za-z0-9@+._/-]*) return 1 ;;
+    /*|*..*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+group_file() {
+  printf '%s/%s.conf' "$GROUP_DIR" "$1"
+}
+
+require_user_runtime() {
+  [ "$(id -u)" -ne 0 ] || die "checks and upgrades must run as your Homebrew user, not root"
+  [ -x "$BREW" ] || die "Homebrew was not found at $BREW"
+  mkdir -p "$STATE_DIR" "$LOG_DIR" "$CACHE_DIR"
+  chmod 700 "$STATE_DIR" "$LOG_DIR" "$CACHE_DIR" 2>/dev/null || true
+}
+
+escalate_mutation() {
+  if [ "$(id -u)" -ne 0 ]; then
+    installed_runtime || die "protected runtime is not installed; run: brew-watchtower setup"
+    exec /usr/bin/sudo "$POLICY_ROOT/bin/autoupdate" "$@"
+  fi
+}
+
+installed_runtime() {
+  [ -x "$POLICY_ROOT/bin/autoupdate" ]
+}
+
+plist_path() {
+  printf '%s/Library/LaunchAgents/local.homebrew-autoupdate.%s.plist' "$1" "$2"
+}
+
+write_launchagent() {
+  target_user=$1 target_uid=$2 target_home=$3 group=$4 hour=$5 minute=$6
+  valid_group "$group" || die "invalid group name: $group"
+  case "$hour" in ''|*[!0-9]*) die "hour must be 0 through 23" ;; esac
+  case "$minute" in ''|*[!0-9]*) die "minute must be 0 through 59" ;; esac
+  [ "$hour" -ge 0 ] && [ "$hour" -le 23 ] || die "hour must be 0 through 23"
+  [ "$minute" -ge 0 ] && [ "$minute" -le 59 ] || die "minute must be 0 through 59"
+
+  agent_dir="$target_home/Library/LaunchAgents"
+  log_dir="$target_home/Library/Logs/Homebrew AutoUpdate"
+  agent=$(plist_path "$target_home" "$group")
+  mkdir -p "$agent_dir" "$log_dir"
+  tmp=$(mktemp /tmp/brew-watchtower-agent.XXXXXX) || exit 1
+  cat > "$tmp" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>local.homebrew-autoupdate.$group</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$POLICY_ROOT/bin/autoupdate</string>
+    <string>run</string>
+    <string>$group</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>$hour</integer>
+    <key>Minute</key><integer>$minute</integer>
+  </dict>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>StandardOutPath</key>
+  <string>$log_dir/launchd-$group.log</string>
+  <key>StandardErrorPath</key>
+  <string>$log_dir/launchd-$group.log</string>
+</dict>
+</plist>
+EOF
+  /usr/bin/plutil -lint "$tmp" >/dev/null || die "generated an invalid LaunchAgent"
+  chown "$target_user":staff "$tmp"
+  chmod 0644 "$tmp"
+  mv "$tmp" "$agent"
+  chown -R "$target_user":staff "$log_dir"
+  chmod 0700 "$log_dir"
+  /bin/launchctl asuser "$target_uid" /bin/launchctl bootout "gui/$target_uid" "$agent" 2>/dev/null || true
+  /bin/launchctl asuser "$target_uid" /bin/launchctl bootstrap "gui/$target_uid" "$agent"
+}
+
+cmd_setup() {
+  [ $# -le 2 ] || die "setup takes optional HOUR and MINUTE"
+  hour=${1:-9} minute=${2:-30}
+  if [ "$(id -u)" -ne 0 ]; then
+    target_user=$(id -un)
+    target_uid=$(id -u)
+    exec /usr/bin/sudo "$0" __setup "$target_user" "$target_uid" "$USER_HOME" "$hour" "$minute"
+  fi
+  die "setup must be started by a non-root user"
+}
+
+cmd_setup_internal() {
+  [ "$(id -u)" -eq 0 ] || die "internal setup requires root"
+  [ $# -eq 5 ] || die "invalid internal setup invocation"
+  target_user=$1 target_uid=$2 target_home=$3 hour=$4 minute=$5
+  source_script=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+  case "$target_home" in /Users/*) ;; *) die "refusing unexpected home directory: $target_home" ;; esac
+  id -u "$target_user" >/dev/null 2>&1 || die "unknown user: $target_user"
+
+  install -d -o root -g wheel -m 0755 "$POLICY_ROOT" "$POLICY_ROOT/bin" "$GROUP_DIR"
+  install -o root -g wheel -m 0755 "$source_script" "$POLICY_ROOT/bin/autoupdate"
+  security_file=$(group_file security)
+  if [ ! -f "$security_file" ]; then
+    tmp=$(mktemp /tmp/brew-watchtower-group.XXXXXX) || exit 1
+    printf '# type\ttoken\tmode\n' > "$tmp"
+    install -o root -g wheel -m 0644 "$tmp" "$security_file"
+    rm -f "$tmp"
+  fi
+  write_launchagent "$target_user" "$target_uid" "$target_home" security "$hour" "$minute"
+  echo "Protected runtime installed. Security group scheduled daily at $(printf '%02d:%02d' "$hour" "$minute")."
+}
+
+cmd_schedule() {
+  [ $# -eq 3 ] || die "schedule requires GROUP HOUR MINUTE"
+  group=$1 hour=$2 minute=$3
+  valid_group "$group" || die "invalid group name: $group"
+  [ -f "$(group_file "$group")" ] || die "unknown group: $group"
+  if [ "$(id -u)" -ne 0 ]; then
+    target_user=$(id -un)
+    target_uid=$(id -u)
+    exec /usr/bin/sudo "$POLICY_ROOT/bin/autoupdate" __schedule "$target_user" "$target_uid" "$USER_HOME" "$group" "$hour" "$minute"
+  fi
+  die "schedule must be started by a non-root user"
+}
+
+cmd_schedule_internal() {
+  [ "$(id -u)" -eq 0 ] || die "internal scheduling requires root"
+  [ $# -eq 6 ] || die "invalid internal schedule invocation"
+  write_launchagent "$1" "$2" "$3" "$4" "$5" "$6"
+  echo "Scheduled $4 daily at $(printf '%02d:%02d' "$5" "$6")."
+}
+
+read_entries() {
+  file=$1
+  [ -f "$file" ] || return 0
+  awk -F '\t' '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    NF == 3 { print $1 "\t" $2 "\t" $3 }
+  ' "$file"
+}
+
+cmd_groups() {
+  [ -d "$GROUP_DIR" ] || return 0
+  for file in "$GROUP_DIR"/*.conf; do
+    [ -f "$file" ] || continue
+    name=$(basename "$file" .conf)
+    count=$(read_entries "$file" | wc -l | tr -d ' ')
+    printf '%-20s %s item(s)\n' "$name" "$count"
+  done
+}
+
+cmd_list() {
+  if [ $# -eq 0 ]; then
+    for file in "$GROUP_DIR"/*.conf; do
+      [ -f "$file" ] || continue
+      name=$(basename "$file" .conf)
+      echo "[$name]"
+      read_entries "$file" | awk -F '\t' '{printf "  %-8s %-32s %s\n", $1, $2, $3}'
+    done
+    return
+  fi
+  valid_group "$1" || die "invalid group name: $1"
+  file=$(group_file "$1")
+  [ -f "$file" ] || die "unknown group: $1"
+  read_entries "$file" | awk -F '\t' '{printf "%-8s %-32s %s\n", $1, $2, $3}'
+}
+
+cmd_add() {
+  [ $# -ge 3 ] && [ $# -le 4 ] || die "add requires GROUP TYPE TOKEN [MODE]"
+  group=$1 type=$2 token=$3 mode=${4:-auto}
+  valid_group "$group" || die "invalid group name: $group"
+  valid_token "$token" || die "invalid Homebrew token: $token"
+  case "$type" in formula|cask) ;; *) die "TYPE must be formula or cask" ;; esac
+  case "$mode" in auto|interactive) ;; *) die "MODE must be auto or interactive" ;; esac
+  escalate_mutation add "$group" "$type" "$token" "$mode"
+
+  file=$(group_file "$group")
+  mkdir -p "$GROUP_DIR"
+  tmp=$(mktemp /tmp/autoupdate-group.XXXXXX) || exit 1
+  if [ -f "$file" ]; then
+    awk -F '\t' -v token="$token" '$2 != token' "$file" > "$tmp"
+  else
+    printf '# type\ttoken\tmode\n' > "$tmp"
+  fi
+  printf '%s\t%s\t%s\n' "$type" "$token" "$mode" >> "$tmp"
+  sort -t "$(printf '\t')" -k2,2 "$tmp" -o "$tmp"
+  chown root:wheel "$tmp"
+  chmod 0644 "$tmp"
+  mv "$tmp" "$file"
+  echo "Added $token to $group as $type ($mode)."
+}
+
+cmd_remove() {
+  [ $# -eq 2 ] || die "remove requires GROUP TOKEN"
+  group=$1 token=$2
+  valid_group "$group" || die "invalid group name: $group"
+  valid_token "$token" || die "invalid Homebrew token: $token"
+  escalate_mutation remove "$group" "$token"
+
+  file=$(group_file "$group")
+  [ -f "$file" ] || die "unknown group: $group"
+  grep -Fq "$(printf '\t')$token$(printf '\t')" "$file" || die "$token is not in $group"
+  tmp=$(mktemp /tmp/autoupdate-group.XXXXXX) || exit 1
+  awk -F '\t' -v token="$token" '$2 != token' "$file" > "$tmp"
+  chown root:wheel "$tmp"
+  chmod 0644 "$tmp"
+  mv "$tmp" "$file"
+  echo "Removed $token from $group."
+}
+
+notify() {
+  title=$1 body=$2
+  /usr/bin/osascript -e "display notification $(printf '%s' "$body" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "\"%s\"", $0}') with title \"$title\"" >/dev/null 2>&1 || true
+}
+
+acquire_lock() {
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    die "another Homebrew AutoUpdate job appears to be running"
+  fi
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT HUP INT TERM
+}
+
+outdated_token() {
+  type=$1 token=$2
+  case "$type" in
+    formula) "$BREW" outdated --formula "$token" 2>/dev/null | grep -Fxq "$token" ;;
+    cask) "$BREW" outdated --cask --greedy-auto-updates "$token" 2>/dev/null | grep -Fxq "$token" ;;
+  esac
+}
+
+cmd_check_or_run() {
+  action=$1 group=$2
+  valid_group "$group" || die "invalid group name: $group"
+  file=$(group_file "$group")
+  [ -f "$file" ] || die "unknown group: $group"
+  require_user_runtime
+  acquire_lock
+
+  logfile="$LOG_DIR/$group.log"
+  statusfile="$STATE_DIR/$group.status"
+  exec >> "$logfile" 2>&1
+  echo "===== $(date '+%Y-%m-%d %H:%M:%S %Z') action=$action group=$group ====="
+
+  if ! "$BREW" update; then
+    printf 'last_run=%s\nresult=failed\nreason=brew_update\n' "$(date +%s)" > "$statusfile"
+    notify "Homebrew AutoUpdate failed" "$group: brew update failed"
+    return 1
+  fi
+
+  pending_auto=""
+  pending_interactive=""
+  while IFS="$(printf '\t')" read -r type token mode; do
+    [ -n "$type" ] || continue
+    valid_token "$token" || { echo "Rejected invalid token in $file: $token"; continue; }
+    case "$type:$mode" in formula:auto|formula:interactive|cask:auto|cask:interactive) ;; *) echo "Rejected invalid entry: $type $token $mode"; continue ;; esac
+    if outdated_token "$type" "$token"; then
+      echo "OUTDATED $type $token mode=$mode"
+      if [ "$mode" = interactive ]; then
+        pending_interactive="$pending_interactive $token"
+      else
+        pending_auto="$pending_auto $type:$token"
+      fi
+    fi
+  done <<EOF
+$(read_entries "$file")
+EOF
+
+  failures=0
+  if [ "$action" = run ]; then
+    for entry in $pending_auto; do
+      type=${entry%%:*}; token=${entry#*:}
+      echo "UPGRADING $type $token"
+      if [ "$type" = cask ]; then
+        "$BREW" upgrade --cask --greedy-auto-updates "$token" || failures=$((failures + 1))
+      else
+        "$BREW" upgrade --formula "$token" || failures=$((failures + 1))
+      fi
+    done
+
+    # Interactive entries are run only from an attached Terminal. launchd has
+    # no TTY and therefore only reports them.
+    if [ -t 0 ]; then
+      for token in $pending_interactive; do
+        echo "UPGRADING interactive cask $token"
+        env -u NONINTERACTIVE "$BREW" upgrade --cask --greedy-auto-updates "$token" || failures=$((failures + 1))
+      done
+      pending_interactive=""
+    fi
+  fi
+
+  now=$(date +%s)
+  if [ "$failures" -gt 0 ]; then
+    printf 'last_run=%s\nresult=failed\nfailures=%s\n' "$now" "$failures" > "$statusfile"
+    notify "Homebrew AutoUpdate failed" "$group: $failures upgrade(s) failed; see $logfile"
+    return 1
+  fi
+  printf 'last_run=%s\nresult=success\npending_interactive=%s\n' "$now" "${pending_interactive# }" > "$statusfile"
+  if [ -n "$pending_interactive" ]; then
+    notify "Homebrew updates need attention" "$group:${pending_interactive}; run brew-watchtower run $group"
+  fi
+  echo "Completed successfully."
+}
+
+cmd_status() {
+  if [ $# -eq 1 ]; then
+    valid_group "$1" || die "invalid group name: $1"
+    file="$STATE_DIR/$1.status"
+    if [ -f "$file" ]; then
+      echo "[$1]"
+      sed 's/^/  /' "$file"
+    else
+      echo "No runs recorded yet."
+    fi
+    return
+  else
+    found=0
+  fi
+  for file in "$STATE_DIR"/*.status; do
+    [ -f "$file" ] || continue
+    found=1
+    group=$(basename "$file" .status)
+    echo "[$group]"
+    sed 's/^/  /' "$file"
+  done
+  [ "$found" -eq 1 ] || echo "No runs recorded yet."
+}
+
+command=${1:-help}
+[ $# -eq 0 ] || shift
+case "$command" in
+  groups) [ $# -eq 0 ] || die "groups takes no arguments"; cmd_groups ;;
+  list) [ $# -le 1 ] || die "list takes at most one group"; cmd_list "$@" ;;
+  add) cmd_add "$@" ;;
+  remove) cmd_remove "$@" ;;
+  check) [ $# -eq 1 ] || die "check requires GROUP"; cmd_check_or_run check "$1" ;;
+  run) [ $# -eq 1 ] || die "run requires GROUP"; cmd_check_or_run run "$1" ;;
+  status) [ $# -le 1 ] || die "status takes at most one group"; cmd_status "$@" ;;
+  setup) cmd_setup "$@" ;;
+  schedule) cmd_schedule "$@" ;;
+  __setup) cmd_setup_internal "$@" ;;
+  __schedule) cmd_schedule_internal "$@" ;;
+  version) echo "$PROGRAM $VERSION" ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; die "unknown command: $command" ;;
+esac

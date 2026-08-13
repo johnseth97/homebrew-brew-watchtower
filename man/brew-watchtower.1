@@ -1,0 +1,258 @@
+.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.1.0" "User Commands"
+.SH NAME
+brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
+.SH SYNOPSIS
+.B brew-watchtower
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B brew-watchtower
+organizes Homebrew formulae and casks into named update groups.
+Each item has an
+.B auto
+or
+.B interactive
+mode.
+.PP
+Automatic items may be upgraded by a background launchd job.
+Interactive items are detected and reported by background jobs but are upgraded
+only when
+.B brew-watchtower run
+is invoked from an attached terminal.
+.PP
+Checks and upgrades always run as the current Homebrew user and refuse to run
+as root. Changes to group membership require administrator authorization because
+the group registry is root-owned.
+.SH COMMANDS
+.TP
+.B groups
+List all configured groups and the number of items in each group.
+.TP
+.B list " [" GROUP "]"
+List every configured item. If
+.I GROUP
+is supplied, list only that group's contents.
+.TP
+.BI "add " "GROUP TYPE TOKEN " [ MODE ]
+Add an item to a group or replace the existing entry for the same token.
+.I TYPE
+must be
+.B formula
+or
+.BR cask .
+.I MODE
+must be
+.B auto
+or
+.BR interactive ,
+and defaults to
+.BR auto .
+.IP
+This command invokes sudo to update the root-owned group registry.
+.TP
+.BI "remove " "GROUP TOKEN"
+Remove an item from a group. This command invokes sudo to update the root-owned
+group registry.
+.TP
+.BI "check " GROUP
+Refresh Homebrew metadata and report outdated members of
+.IR GROUP .
+No package upgrades are performed.
+.TP
+.BI "run " GROUP
+Refresh Homebrew metadata, detect outdated members, and upgrade all
+.B auto
+members of
+.IR GROUP .
+.IP
+When invoked from an attached terminal, outdated
+.B interactive
+members are also offered to Homebrew for upgrade. Under launchd, interactive
+members are left pending and a macOS notification is generated.
+.TP
+.B status " [" GROUP "]"
+Display the last recorded result and pending interactive items. If
+.I GROUP
+is omitted, display status for every group that has run.
+.TP
+.B setup [HOUR [MINUTE]]
+Install or refresh the protected root-owned runtime, create the security group
+if it does not exist, and install its user LaunchAgent. The default daily
+schedule is 09:30. This command requests administrator authorization.
+.TP
+.BI "schedule " "GROUP HOUR MINUTE"
+Create or replace the daily user LaunchAgent for
+.IR GROUP .
+The hour must be 0 through 23 and the minute 0 through 59. This command requests
+administrator authorization.
+.TP
+.B version
+Print the installed brew-watchtower version.
+.TP
+.BR help , " " -h , " " --help
+Display a concise command summary.
+.SH ITEM MODES
+.TP
+.B auto
+The item may be upgraded without user interaction during a scheduled run.
+Use this for software whose installation is reliably non-interactive and whose
+temporary restart or termination is acceptable during the scheduled window.
+.TP
+.B interactive
+Background runs detect and report the update but do not install it. A run from
+an attached terminal attempts the upgrade, allowing Homebrew, macOS Installer,
+or system-extension management to request authorization.
+.PP
+Changing an existing token's mode is done by adding it again:
+.PP
+.nf
+brew-watchtower add security cask tailscale-app auto
+.fi
+.SH EXAMPLES
+List configured groups:
+.PP
+.nf
+brew-watchtower groups
+.fi
+.PP
+List the security group:
+.PP
+.nf
+brew-watchtower list security
+.fi
+.PP
+Add Firefox for unattended security updates:
+.PP
+.nf
+brew-watchtower add security cask firefox auto
+.fi
+.PP
+Add Tailscale as an interactive update:
+.PP
+.nf
+brew-watchtower add security cask tailscale-app interactive
+.fi
+.PP
+Add Git to a development-tools group:
+.PP
+.nf
+brew-watchtower add dev-tools formula git auto
+.fi
+.PP
+Check without installing anything:
+.PP
+.nf
+brew-watchtower check security
+.fi
+.PP
+Run the security group from a terminal:
+.PP
+.nf
+brew-watchtower run security
+.fi
+.PP
+Remove an item:
+.PP
+.nf
+brew-watchtower remove security firefox
+.fi
+.SH SCHEDULING
+brew-watchtower does not remain resident. User-level launchd jobs invoke it at
+calendar intervals.
+.PP
+The initial security LaunchAgent runs:
+.PP
+.nf
+brew-watchtower run security
+.fi
+.PP
+daily at 09:30 local time. Because the job has no attached terminal,
+interactive items are reported rather than installed.
+.PP
+The current launchd definition can be inspected with:
+.PP
+.nf
+launchctl print "gui/$(id -u)/local.homebrew-autoupdate.security"
+.fi
+.PP
+Create another daily schedule with:
+.PP
+.nf
+brew-watchtower schedule dev-tools 5 0
+.fi
+.SH GROUP FILE FORMAT
+Group files are tab-delimited declarative data with three fields:
+.PP
+.nf
+TYPE    TOKEN    MODE
+.fi
+.PP
+For example:
+.PP
+.nf
+cask    tailscale-app    interactive
+formula openssl@3        auto
+.fi
+.PP
+Blank lines and lines beginning with a number sign are ignored. Group files are
+never sourced or evaluated as shell code. Group names and all fields are
+validated before use.
+.SH FILES
+.TP
+.B /Library/Application Support/Homebrew AutoUpdate/bin/autoupdate
+Root-owned implementation used by both the command-line symlink and launchd.
+.TP
+.B /Library/Application Support/Homebrew AutoUpdate/groups/*.conf
+Root-owned group registry.
+.TP
+.B /usr/local/bin/brew-watchtower
+Command-line symlink used by a local installation. A Homebrew package instead
+links the command from its Cellar into the Homebrew prefix.
+.TP
+.B ~/Library/LaunchAgents/local.homebrew-autoupdate.*.plist
+User-level launchd schedules.
+.TP
+.B ~/Library/Logs/Homebrew AutoUpdate/*.log
+Per-group and launchd logs.
+.TP
+.B ~/Library/Application Support/Homebrew AutoUpdate/*.status
+Last-run state and pending interactive items.
+.TP
+.B ~/Library/Caches/Homebrew AutoUpdate/update.lock
+Global lock directory used to prevent overlapping runs.
+.SH ENVIRONMENT
+brew-watchtower uses a fixed executable path of
+.B /opt/homebrew/bin/brew
+and supplies a minimal PATH.
+.PP
+Automated runs set Homebrew options that disable analytics, suppress environment
+hints, disable automatic cleanup, and request non-interactive behavior.
+Interactive entries run without Homebrew's non-interactive setting when invoked
+from a terminal.
+.SH SECURITY
+brew-watchtower never runs Homebrew as root and never stores an administrator
+password. The executable and group registry are owned by root. Runtime state,
+logs, caches, and LaunchAgents belong to the user.
+.PP
+Root ownership prevents ordinary user-level software from silently changing the
+persistent update policy. It does not prevent software already running as the
+user from invoking Homebrew directly or creating another user LaunchAgent.
+.PP
+Homebrew casks and packages may execute vendor installers or package scripts.
+Automatic mode should therefore be assigned only to trusted packages whose
+installation behavior is suitable for unattended execution.
+.SH EXIT STATUS
+.TP
+.B 0
+The requested operation completed successfully.
+.TP
+.B non-zero
+Invalid input, an unknown group, a concurrent run, a Homebrew refresh failure,
+or one or more failed upgrades.
+.SH SEE ALSO
+.BR brew (1),
+.BR launchctl (1),
+.BR launchd.plist (5),
+.BR sudo (8)
+.SH AUTHOR
+Ethan Johnson <https://github.com/johnseth97>
