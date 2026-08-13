@@ -222,7 +222,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported version
 ## Development
 
 ```bash
-make verify-release VERSION=0.2.1
+make verify-release VERSION=0.2.2
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and
