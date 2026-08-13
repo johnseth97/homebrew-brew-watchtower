@@ -64,6 +64,23 @@ load_config() {
 }
 
 
+cmd_config_show() {
+  [ $# -eq 0 ] || die "config show takes no arguments"
+  load_config
+  printf 'config=%s\n' "$CONFIG_FILE"
+  printf 'blurb=%s\n' "$blurb"
+  printf 'prefix=%s\n' "$prefix"
+  printf 'detect_brewfile_drift=%s\n' "$detect_brewfile_drift"
+  printf 'brewfile=%s\n' "$brewfile"
+  printf 'export_brewfile=%s\n' "$export_brewfile"
+  printf 'export_path=%s\n' "$export_path"
+}
+
+cmd_config_path() {
+  [ $# -eq 0 ] || die "config path takes no arguments"
+  printf '%s\n' "$CONFIG_FILE"
+}
+
 cmd_config_init() {
   [ $# -eq 0 ] || die "config init takes no arguments"
   mkdir -p "$CONFIG_DIR"

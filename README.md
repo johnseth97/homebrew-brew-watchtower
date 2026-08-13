@@ -27,6 +27,10 @@ brew-watchtower setup
 
 `setup` requests administrator authorization to install the protected runtime under `/Library/Application Support/Homebrew AutoUpdate`. It creates a `security` group and schedules it daily at 09:30.
 
+If `~/.config` already exists, installation also seeds
+`~/.config/brew-watchtower/config` when that file does not exist. It never
+creates `~/.config` and never overwrites an existing user config.
+
 Choose another initial time with:
 
 ```bash
@@ -71,10 +75,14 @@ Watchtower can print a compact, actionable status line when a shell starts. The
 blurb only reads the small Watchtower status files; it never invokes Homebrew,
 Git, or the network at shell startup.
 
-Create the user-owned configuration once:
+Create the user-owned configuration once if installation did not seed it:
 
 ```bash
 brew-watchtower config init
+
+# Discover the exact path and effective settings.
+brew-watchtower config path
+brew-watchtower config show
 ```
 
 Then opt in from `.zshrc` near the top, after `PATH` makes Homebrew available:
@@ -83,10 +91,25 @@ Then opt in from `.zshrc` near the top, after `PATH` makes Homebrew available:
 brew-watchtower blurb
 ```
 
-The default `~/.config/brew-watchtower/config` shows only actionable state:
-failed groups, pending interactive upgrades, or Brewfile drift. Configure
-`blurb=always` or `blurb=never`, choose a `prefix`, enable or disable
-`detect_brewfile_drift`, and optionally set `export_brewfile=1`.
+The default config shows only actionable state: failed groups, pending
+interactive upgrades, or Brewfile drift.
+
+```ini
+# actionable prints only failures, pending interactive updates, or drift.
+# Use always for a last-check heartbeat, or never to silence it.
+blurb=actionable
+
+# Any plain text, emoji, or Nerd Font glyphs are accepted.
+prefix=⛫ Watchtower
+
+# Evaluated during Watchtower check/run, never during shell startup.
+detect_brewfile_drift=1
+brewfile=~/.dotfiles/macos/Brewfile
+
+# Optional generated machine snapshot; never replaces the curated Brewfile.
+export_brewfile=0
+export_path=~/.config/brew-watchtower/Brewfile.generated
+```
 
 Drift checks and generated exports run during a scheduled Watchtower
 `check`/`run`, not during shell startup. An export is always written to the
@@ -110,6 +133,10 @@ brew-watchtower remove security firefox
 | `brew-watchtower check GROUP` | Refresh metadata and report outdated entries |
 | `brew-watchtower run GROUP` | Upgrade eligible entries |
 | `brew-watchtower status [GROUP]` | Show last-run state and pending interactive items |
+| `brew-watchtower blurb` | Print a fast, actionable shell-start status line |
+| `brew-watchtower config init` | Create a missing default user config |
+| `brew-watchtower config show` | Print effective user config values |
+| `brew-watchtower config path` | Print the user config path |
 | `brew-watchtower schedule GROUP HOUR MINUTE` | Create or replace a daily schedule |
 | `brew-watchtower setup [HOUR [MINUTE]]` | Install or refresh the protected runtime |
 
@@ -195,12 +222,31 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported version
 ## Development
 
 ```bash
-make test
-make dist VERSION=0.1.0
-make verify-release VERSION=0.1.0
+make verify-release VERSION=0.2.1
 ```
 
-The release archive is deterministic and can be uploaded as `brew-watchtower-VERSION.tar.gz` on the corresponding `vVERSION` GitHub release. The formula pins its SHA-256 digest. `verify-release` rebuilds the archive and fails unless its version, filename, URL, and SHA-256 all match the formula.
+The release archive is deterministic. `verify-release` rebuilds the archive and
+fails unless the requested version, archive filename, formula URL, and formula
+SHA-256 all agree.
+
+For a release, update the version in `bin/brew-watchtower`, formula URL, formula
+test expectation, and manpage; then generate the archive, copy its SHA-256 into
+the formula, and verify again:
+
+```bash
+make dist VERSION=X.Y.Z
+cat dist/brew-watchtower-X.Y.Z.tar.gz.sha256
+# Update Formula/brew-watchtower.rb with that SHA-256.
+make verify-release VERSION=X.Y.Z
+git add -A && git commit -m "Release brew-watchtower vX.Y.Z"
+git push origin main
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+Only tag the commit that passes `make verify-release VERSION=X.Y.Z`. The tag
+push runs the release workflow, which rebuilds and verifies the same source
+before uploading the archive.
 
 ## License
 

@@ -1,4 +1,4 @@
-.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.2.0" "User Commands"
+.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.2.1" "User Commands"
 .SH NAME
 brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
 .SH SYNOPSIS
@@ -83,6 +83,12 @@ files; it never invokes Homebrew, Git, or the network.
 .B config init
 Create the default user-owned configuration file at
 .I ~/.config/brew-watchtower/config .
+.TP
+.B config show
+Print the effective user-owned presentation and Brewfile settings.
+.TP
+.B config path
+Print the exact path of the user-owned configuration file.
 .TP
 .B setup [HOUR [MINUTE]]
 Install or refresh the protected root-owned runtime, create the security group
