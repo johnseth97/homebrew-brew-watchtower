@@ -3,10 +3,13 @@ set -eu
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
-bash -n "$repo_root/bin/brew-watchtower"
+bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.1.0" ]
+[ "$output" = "brew-watchtower 0.2.0" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
+for module in policy runtime scheduler updates; do
+  [ -f "$repo_root/lib/$module.sh" ]
+done
 
 sandbox=$(mktemp -d)
 trap 'rm -rf "$sandbox"' EXIT
