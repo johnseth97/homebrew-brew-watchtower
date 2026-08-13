@@ -109,12 +109,26 @@ brewfile=~/.dotfiles/macos/Brewfile
 # Optional generated machine snapshot; never replaces the curated Brewfile.
 export_brewfile=0
 export_path=~/.config/brew-watchtower/Brewfile.generated
+
+# Disabled by default. During a Watchtower check/run, repair detected drift by
+# snapshotting the configured Brewfile and regenerating it from Homebrew.
+auto_fix_brewfile_drift=0
+# Keep the newest N Watchtower-created backups (0 keeps all); optionally prune
+# anything older than N days (0 disables age pruning).
+brewfile_backup_keep=5
+brewfile_backup_max_age_days=0
 ```
 
 Drift checks and generated exports run during a scheduled Watchtower
 `check`/`run`, not during shell startup. An export is always written to the
 separate `export_path` (default: `~/.config/brew-watchtower/Brewfile.generated`)
 and never overwrites the curated `brewfile` path.
+
+Set `auto_fix_brewfile_drift=1` to repair detected drift at the end of a
+Watchtower `check` or `run`. It is intentionally **not** a global Homebrew hook:
+ordinary `brew install`, `upgrade`, or `uninstall` commands do not trigger it.
+The repair uses the same backup-first behavior as `drift fix`; retention applies
+only to sibling files named `Brewfile.backup-*` that Watchtower creates.
 
 Run a manual, no-update drift check at any time:
 
@@ -261,7 +275,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported version
 ## Development
 
 ```bash
-make verify-release VERSION=0.4.0
+make verify-release VERSION=0.5.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and

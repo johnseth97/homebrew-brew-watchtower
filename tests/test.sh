@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.4.0" ]
+[ "$output" = "brew-watchtower 0.5.0" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
 for completion in completions/brew-watchtower.bash completions/_brew-watchtower; do
@@ -56,7 +56,14 @@ if [ "$1" = bundle ] && [ "$2" = dump ]; then
   done
 fi
 if [ "$1" = bundle ] && [ "$2" = check ]; then
-  exit 1
+  shift 2
+  while [ $# -gt 0 ]; do
+    if [ "$1" = --file ]; then
+      grep -q new-package "$2"
+      exit $?
+    fi
+    shift
+  done
 fi
 exit 1
 EOF
@@ -68,6 +75,9 @@ blurb=never
 detect_brewfile_drift=1
 brewfile=$sandbox/curated/Brewfile
 export_brewfile=0
+auto_fix_brewfile_drift=1
+brewfile_backup_keep=1
+brewfile_backup_max_age_days=0
 EOF
 HOME="$sandbox" TEST_BREW="$fake_brew" REPO_ROOT="$repo_root" bash -c '
   set -eu
@@ -87,6 +97,11 @@ HOME="$sandbox" TEST_BREW="$fake_brew" REPO_ROOT="$repo_root" bash -c '
   grep -q old-package "$HOME/curated/$backup"
   cmd_drift_restore "$backup"
   grep -q old-package "$HOME/curated/Brewfile"
+  record_brewfile_state "$HOME/Library/Application Support/Homebrew AutoUpdate/auto.status"
+  grep -q '^brewfile_drift=clean$' "$HOME/Library/Application Support/Homebrew AutoUpdate/auto.status"
+  grep -q '^brewfile_auto_fix=success$' "$HOME/Library/Application Support/Homebrew AutoUpdate/auto.status"
+  grep -q new-package "$HOME/curated/Brewfile"
+  [ "$(find "$HOME/curated" -maxdepth 1 -name "Brewfile.backup-*" | wc -l | tr -d " ")" = 1 ]
 '
 
 if command -v mandoc >/dev/null 2>&1; then

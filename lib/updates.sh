@@ -24,11 +24,49 @@ outdated_token() {
 }
 
 
+prune_brewfile_backups() {
+  backup_dir=$(dirname "$brewfile")
+  backup_pattern="$(basename "$brewfile").backup-*"
+
+  if [ "$brewfile_backup_max_age_days" -gt 0 ]; then
+    find "$backup_dir" -maxdepth 1 -type f -name "$backup_pattern" -mtime "+$brewfile_backup_max_age_days" -delete
+  fi
+
+  [ "$brewfile_backup_keep" -gt 0 ] || return 0
+  backup_list=$(mktemp "$CACHE_DIR/brew-watchtower-backups.XXXXXX") || return 1
+  while IFS= read -r backup_path; do
+    printf '%s\t%s\n' "$(stat -f '%m' "$backup_path")" "$backup_path"
+  done < <(find "$backup_dir" -maxdepth 1 -type f -name "$backup_pattern") | sort -rn > "$backup_list"
+  backup_count=0
+  while IFS="$(printf '\t')" read -r backup_mtime backup_path; do
+    [ -n "$backup_path" ] || continue
+    backup_count=$((backup_count + 1))
+    [ "$backup_count" -le "$brewfile_backup_keep" ] || rm -f "$backup_path"
+  done < "$backup_list"
+  rm -f "$backup_list"
+  return 0
+}
+
+
+perform_drift_fix() {
+  mode=$1
+  if [ "$mode" = backup ]; then
+    backup_path=$(drift_backup_file "$brewfile") || return 1
+    printf 'Backed up %s to %s\n' "$brewfile" "$backup_path"
+  fi
+  HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$brewfile" || return 1
+  prune_brewfile_backups || return 1
+  printf 'Replaced %s with the current Homebrew bundle.\n' "$brewfile"
+}
+
+
 record_brewfile_state() {
   statusfile=$1
+  auto_fix_mode=${2:-enabled}
   load_config
   drift=disabled
   exported=disabled
+  auto_fixed=disabled
 
   if [ "$detect_brewfile_drift" = 1 ]; then
     if [ ! -f "$brewfile" ]; then
@@ -37,6 +75,14 @@ record_brewfile_state() {
       drift=clean
     else
       drift=detected
+      if [ "$auto_fix_brewfile_drift" = 1 ] && [ "$auto_fix_mode" = enabled ]; then
+        if perform_drift_fix backup && HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle check --file "$brewfile" >/dev/null 2>&1; then
+          drift=clean
+          auto_fixed=success
+        else
+          auto_fixed=failed
+        fi
+      fi
     fi
   fi
 
@@ -50,7 +96,7 @@ record_brewfile_state() {
     fi
   fi
 
-  printf 'brewfile_checked=%s\nbrewfile_drift=%s\nbrewfile_export=%s\n' "$(date +%s)" "$drift" "$exported" >> "$statusfile"
+  printf 'brewfile_checked=%s\nbrewfile_drift=%s\nbrewfile_auto_fix=%s\nbrewfile_export=%s\n' "$(date +%s)" "$drift" "$auto_fixed" "$exported" >> "$statusfile"
 }
 
 
@@ -117,7 +163,7 @@ drift_backup_file() {
 refresh_drift_status() {
   statusfile="$STATE_DIR/drift.status"
   printf 'last_run=%s\nresult=success\npending_interactive=\n' "$(date +%s)" > "$statusfile"
-  record_brewfile_state "$statusfile"
+  record_brewfile_state "$statusfile" disabled
 }
 
 
@@ -127,14 +173,8 @@ cmd_drift_fix() {
   load_config
   [ -f "$brewfile" ] || die "configured Brewfile is unavailable: $brewfile"
 
-  if [ "$mode" = backup ]; then
-    backup_path=$(drift_backup_file "$brewfile") || die "could not back up Brewfile: $brewfile"
-    printf 'Backed up %s to %s\n' "$brewfile" "$backup_path"
-  fi
-
-  HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$brewfile" || die "could not write Brewfile: $brewfile"
+  perform_drift_fix "$mode" || die "could not write Brewfile: $brewfile"
   refresh_drift_status
-  printf 'Replaced %s with the current Homebrew bundle.\n' "$brewfile"
 }
 
 
@@ -155,8 +195,10 @@ cmd_drift_restore() {
     printf 'Backed up current %s to %s\n' "$brewfile" "$current_backup"
   fi
   cp -p "$backup_path" "$brewfile" || die "could not restore Brewfile from: $backup_path"
+  restored_from=$backup_path
+  prune_brewfile_backups || die "could not prune Brewfile backups"
   refresh_drift_status
-  printf 'Restored %s from %s\n' "$brewfile" "$backup_path"
+  printf 'Restored %s from %s\n' "$brewfile" "$restored_from"
 }
 
 

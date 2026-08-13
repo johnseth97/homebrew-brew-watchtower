@@ -45,6 +45,9 @@ load_config() {
   brewfile="$USER_HOME/.dotfiles/macos/Brewfile"
   export_brewfile=0
   export_path="$CONFIG_DIR/Brewfile.generated"
+  auto_fix_brewfile_drift=0
+  brewfile_backup_keep=5
+  brewfile_backup_max_age_days=0
 
   [ -f "$CONFIG_FILE" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
@@ -57,6 +60,9 @@ load_config() {
       prefix) [ -n "$value" ] && prefix=$value ;;
       detect_brewfile_drift) case "$value" in 0|1) detect_brewfile_drift=$value ;; esac ;;
       export_brewfile) case "$value" in 0|1) export_brewfile=$value ;; esac ;;
+      auto_fix_brewfile_drift) case "$value" in 0|1) auto_fix_brewfile_drift=$value ;; esac ;;
+      brewfile_backup_keep) case "$value" in ''|*[!0-9]*) ;; *) brewfile_backup_keep=$value ;; esac ;;
+      brewfile_backup_max_age_days) case "$value" in ''|*[!0-9]*) ;; *) brewfile_backup_max_age_days=$value ;; esac ;;
       brewfile|export_path)
         case "$value" in '~/'*) value="$USER_HOME/${value#~/}" ;; esac
         case "$value" in /*)
@@ -79,6 +85,9 @@ cmd_config_show() {
   printf 'brewfile=%s\n' "$brewfile"
   printf 'export_brewfile=%s\n' "$export_brewfile"
   printf 'export_path=%s\n' "$export_path"
+  printf 'auto_fix_brewfile_drift=%s\n' "$auto_fix_brewfile_drift"
+  printf 'brewfile_backup_keep=%s\n' "$brewfile_backup_keep"
+  printf 'brewfile_backup_max_age_days=%s\n' "$brewfile_backup_max_age_days"
 }
 
 cmd_config_path() {
@@ -101,6 +110,12 @@ brewfile=$USER_HOME/.dotfiles/macos/Brewfile
 # Export always writes a generated snapshot, never the curated Brewfile above.
 export_brewfile=0
 export_path=$CONFIG_DIR/Brewfile.generated
+# Opt in to regenerating brewfile when a Watchtower check/run detects drift.
+auto_fix_brewfile_drift=0
+# Retain this many Watchtower-created backups; 0 keeps every backup.
+brewfile_backup_keep=5
+# Also delete backups older than this many days; 0 disables age pruning.
+brewfile_backup_max_age_days=0
 EOF
   chmod 600 "$CONFIG_FILE"
   printf 'Created %s\n' "$CONFIG_FILE"

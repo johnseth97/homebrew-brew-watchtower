@@ -1,4 +1,4 @@
-.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.4.0" "User Commands"
+.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.5.0" "User Commands"
 .SH NAME
 brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
 .SH SYNOPSIS
@@ -99,6 +99,16 @@ Restore a sibling backup created by
 The current Brewfile is first saved as a new timestamped backup.
 .I BACKUP
 must be the backup filename, not a path.
+.PP
+Set
+.B auto_fix_brewfile_drift=1
+in the user configuration to apply the same backup-first repair after a
+Watchtower check or run detects drift. This is disabled by default; it does not
+hook arbitrary Homebrew installs or upgrades. Use
+.B brewfile_backup_keep
+and
+.B brewfile_backup_max_age_days
+to prune Watchtower-created backups by count or age.
 .TP
 .B blurb
 Print a compact shell-start status line when configured state is actionable.
