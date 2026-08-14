@@ -13,7 +13,11 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - run: make verify-release VERSION=0.1.0
+      - name: Verify current release metadata
+        run: |
+          version=$(awk -F'"' '/^readonly VERSION=/{print $2; exit}' bin/brew-watchtower)
+          test -n "$version"
+          make verify-release VERSION="$version"
       - name: Audit tap formula
         run: |
           brew tap johnseth97/brew-watchtower "$PWD"
