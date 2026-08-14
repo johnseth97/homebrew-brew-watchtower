@@ -274,6 +274,20 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported version
 
 ## Development
 
+Install the current checkout as a user-local development build (no sudo and no
+changes to Homebrew-managed files):
+
+```bash
+make install
+# Use another user-local prefix when needed:
+make install PREFIX="$HOME/.local"
+```
+
+The launcher is `~/.local/bin/brew-watchtower`; its isolated runtime and local
+completion files live in `~/.local/libexec/brew-watchtower`. `make uninstall`
+removes only that development installation. Ensure `~/.local/bin` precedes
+Homebrew on `PATH` while testing it.
+
 ```bash
 make verify-release VERSION=0.5.1
 ```

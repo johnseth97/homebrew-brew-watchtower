@@ -23,7 +23,14 @@ export HOMEBREW_NO_ENV_HINTS=1
 export HOMEBREW_NO_INSTALL_CLEANUP=1
 export NONINTERACTIVE=1
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# Resolve a local-development symlink before locating the adjacent libraries.
+SCRIPT_PATH=$0
+while [ -L "$SCRIPT_PATH" ]; do
+  LINK_DIR=$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)
+  SCRIPT_PATH=$(readlink "$SCRIPT_PATH")
+  case "$SCRIPT_PATH" in /*) ;; *) SCRIPT_PATH="$LINK_DIR/$SCRIPT_PATH" ;; esac
+done
+SCRIPT_DIR=$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)
 for module in runtime scheduler policy updates; do
   # shellcheck source=/dev/null
   source "$SCRIPT_DIR/../lib/$module.sh"
