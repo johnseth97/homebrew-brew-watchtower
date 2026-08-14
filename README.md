@@ -128,7 +128,7 @@ Set `auto_fix_brewfile_drift=1` to repair detected drift at the end of a
 Watchtower `check` or `run`. It is intentionally **not** a global Homebrew hook:
 ordinary `brew install`, `upgrade`, or `uninstall` commands do not trigger it.
 The repair uses the same backup-first behavior as `drift fix`; retention applies
-only to sibling files named `Brewfile.backup-*` that Watchtower creates.
+only to sibling files named `Brewfile.backup-*`; use that name pattern exclusively for Watchtower backups.
 
 Run a manual, no-update drift check at any time:
 
@@ -275,7 +275,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and supported version
 ## Development
 
 ```bash
-make verify-release VERSION=0.5.0
+make verify-release VERSION=0.5.1
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and

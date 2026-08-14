@@ -5,7 +5,7 @@ set -u
 umask 077
 
 readonly PROGRAM="brew-watchtower"
-readonly VERSION="0.5.0"
+readonly VERSION="0.5.1"
 readonly BREW="/opt/homebrew/bin/brew"
 readonly POLICY_ROOT="/Library/Application Support/Homebrew AutoUpdate"
 readonly GROUP_DIR="$POLICY_ROOT/groups"

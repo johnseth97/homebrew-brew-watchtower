@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.5.0" ]
+[ "$output" = "brew-watchtower 0.5.1" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
 for completion in completions/brew-watchtower.bash completions/_brew-watchtower; do
@@ -20,11 +20,17 @@ trap 'rm -rf "$sandbox"' EXIT
 HOME="$sandbox" "$repo_root/bin/brew-watchtower" config init >/dev/null
 [ -f "$sandbox/.config/brew-watchtower/config" ]
 grep -q '^blurb=actionable$' "$sandbox/.config/brew-watchtower/config"
+grep -q '^auto_fix_brewfile_drift=0$' "$sandbox/.config/brew-watchtower/config"
+grep -q '^brewfile_backup_keep=5$' "$sandbox/.config/brew-watchtower/config"
+grep -q '^brewfile_backup_max_age_days=0$' "$sandbox/.config/brew-watchtower/config"
 config_path=$(HOME="$sandbox" "$repo_root/bin/brew-watchtower" config path)
 [ "$config_path" = "$sandbox/.config/brew-watchtower/config" ]
 config_show=$(HOME="$sandbox" "$repo_root/bin/brew-watchtower" config show)
 printf '%s\n' "$config_show" | grep -q '^blurb=actionable$'
 printf '%s\n' "$config_show" | grep -q '^detect_brewfile_drift=1$'
+printf '%s\n' "$config_show" | grep -q '^auto_fix_brewfile_drift=0$'
+printf '%s\n' "$config_show" | grep -q '^brewfile_backup_keep=5$'
+printf '%s\n' "$config_show" | grep -q '^brewfile_backup_max_age_days=0$'
 
 state_dir="$sandbox/Library/Application Support/Homebrew AutoUpdate"
 mkdir -p "$state_dir"
