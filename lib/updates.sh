@@ -371,6 +371,7 @@ EOF
   now=$(date +%s)
   if [ "$failures" -gt 0 ]; then
     printf 'last_run=%s\nresult=failed\nfailures=%s\n' "$now" "$failures" > "$statusfile"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$group" "$action" failed "failures=$failures" >> "$STATE_DIR/history.tsv"
     notify "Homebrew AutoUpdate failed" "$group: $failures upgrade(s) failed; see $logfile"
     return 1
   fi
