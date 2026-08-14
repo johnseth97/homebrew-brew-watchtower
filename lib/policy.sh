@@ -292,17 +292,18 @@ cmd_groups_init() {
   [ ! -e "$groups_file" ] || die "groups config already exists: $groups_file"
   cat > "$groups_file" <<'GROUPS_EOF'
 # Declarative Watchtower group policy. Run: brew-watchtower groups sync
-# Syntax: [group NAME], schedule=HH:MM, formula=TOKEN,MODE, cask=TOKEN,MODE,
-# formula_glob=PATTERN,MODE, cask_glob=PATTERN,MODE
+# Syntax: [group NAME], schedule=FREQUENCY@TIME, brewfile=include|exclude,
+# formula=TOKEN,MODE, cask=TOKEN,MODE, formula_glob=PATTERN,MODE,
+# cask_glob=PATTERN,MODE. Plain HH:MM remains daily for compatibility.
 # MODE is auto or interactive. Only groups declared here are changed by sync.
 
 [group security]
-schedule=09:30
+schedule=daily@09:30
 # cask=tailscale-app,interactive
 # cask=firefox,auto
 
 [group dev-tools]
-schedule=05:00
+schedule=weekly@mon,05:00
 # formula=git,auto
 # formula=ripgrep,auto
 # formula_glob=python@*,auto
@@ -353,7 +354,9 @@ cmd_groups_sync_internal() {
   trap 'rm -f "$normalized"' EXIT HUP INT TERM
   parse_groups_manifest "$groups_file" "$normalized" || die "groups config is invalid: $groups_file"
 
-  while IFS="$(printf '\t')" read -r record group frequency day hour minute brewfile_mode; do
+  # Tabs are whitespace to `read`, so preserve empty day/hour fields with a
+  # non-whitespace separator before passing normalized schedule records on.
+  while IFS="$(printf '\034')" read -r record group frequency day hour minute brewfile_mode; do
     [ "$record" = G ] || continue
     tmp=$(mktemp /tmp/brew-watchtower-group.XXXXXX) || die "could not create group file"
     printf '# type\ttoken\tmode\n' > "$tmp"
@@ -361,7 +364,9 @@ cmd_groups_sync_internal() {
     install -o root -g wheel -m 0644 "$tmp" "$(group_file "$group")"
     rm -f "$tmp"
     [ -z "$frequency" ] || write_launchagent "$target_user" "$target_uid" "$target_home" "$group" "$frequency" "$day" "$hour" "$minute"
-  done < "$normalized"
+  done <<EOF
+$(awk -F '\t' '$1 == "G" { print $1 "\034" $2 "\034" $3 "\034" $4 "\034" $5 "\034" $6 "\034" $7 }' "$normalized")
+EOF
   rm -f "$normalized"
   trap - EXIT HUP INT TERM
   echo "Synchronized declarative groups from $groups_file."

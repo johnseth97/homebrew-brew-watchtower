@@ -5,6 +5,26 @@ plist_path() {
   printf '%s/Library/LaunchAgents/local.homebrew-autoupdate.%s.plist' "$1" "$2"
 }
 
+calendar_interval_xml() {
+  # Keep this serialization pure so it can be tested without writing a plist
+  # or invoking launchctl. launchd treats missing calendar keys as wildcards.
+  frequency=$1 day=$2 hour=$3 minute=$4
+  case "$frequency" in
+    hourly) printf '<key>Minute</key><integer>%s</integer>' "$minute" ;;
+    daily) printf '<key>Hour</key><integer>%s</integer><key>Minute</key><integer>%s</integer>' "$hour" "$minute" ;;
+    weekly)
+      case "$day" in
+        sun) weekday=0 ;; mon) weekday=1 ;; tue) weekday=2 ;; wed) weekday=3 ;;
+        thu) weekday=4 ;; fri) weekday=5 ;; sat) weekday=6 ;;
+        *) die "invalid weekday" ;;
+      esac
+      printf '<key>Weekday</key><integer>%s</integer><key>Hour</key><integer>%s</integer><key>Minute</key><integer>%s</integer>' "$weekday" "$hour" "$minute"
+      ;;
+    monthly) printf '<key>Day</key><integer>%s</integer><key>Hour</key><integer>%s</integer><key>Minute</key><integer>%s</integer>' "$day" "$hour" "$minute" ;;
+    *) die "invalid schedule frequency" ;;
+  esac
+}
+
 
 write_launchagent() {
   target_user=$1 target_uid=$2 target_home=$3 group=$4 frequency=$5 day=$6 hour=$7 minute=$8
@@ -20,12 +40,7 @@ write_launchagent() {
   agent=$(plist_path "$target_home" "$group")
   mkdir -p "$agent_dir" "$log_dir"
   tmp=$(mktemp /tmp/brew-watchtower-agent.XXXXXX) || exit 1
-  case "$frequency" in
-    hourly) calendar="<key>Minute</key><integer>$minute</integer>" ;;
-    daily) calendar="<key>Hour</key><integer>$hour</integer><key>Minute</key><integer>$minute</integer>" ;;
-    weekly) case "$day" in sun) weekday=0;;mon)weekday=1;;tue)weekday=2;;wed)weekday=3;;thu)weekday=4;;fri)weekday=5;;sat)weekday=6;;*)die "invalid weekday";;esac; calendar="<key>Weekday</key><integer>$weekday</integer><key>Hour</key><integer>$hour</integer><key>Minute</key><integer>$minute</integer>" ;;
-    monthly) calendar="<key>Day</key><integer>$day</integer><key>Hour</key><integer>$hour</integer><key>Minute</key><integer>$minute</integer>" ;;
-  esac
+  calendar=$(calendar_interval_xml "$frequency" "$day" "$hour" "$minute")
   cat > "$tmp" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

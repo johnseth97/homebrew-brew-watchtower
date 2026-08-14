@@ -3,9 +3,10 @@ set -eu
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
+# Static entrypoint, module, and completion coverage.
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.9.0" ]
+[ "$output" = "brew-watchtower 0.10.0" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
 "$repo_root/bin/brew-watchtower" help | grep -q 'groups \[init|sync|prune \[--apply\]|path\]'
@@ -18,6 +19,8 @@ done
 
 sandbox=$(mktemp -d)
 trap 'rm -rf "$sandbox"' EXIT
+
+# User-owned configuration defaults and readback.
 HOME="$sandbox" "$repo_root/bin/brew-watchtower" config init >/dev/null
 [ -f "$sandbox/.config/brew-watchtower/config" ]
 grep -q '^blurb=actionable$' "$sandbox/.config/brew-watchtower/config"
@@ -36,6 +39,8 @@ printf '%s\n' "$config_show" | grep -q '^groups_mode=mutable$'
 printf '%s\n' "$config_show" | grep -q "^groups_file=$sandbox/.config/brew-watchtower/groups.conf$"
 
 HOME="$sandbox" "$repo_root/bin/brew-watchtower" groups init >/dev/null
+
+# Declarative manifest parsing: legacy schedules, selectors, and validation.
 groups_path=$(HOME="$sandbox" "$repo_root/bin/brew-watchtower" groups path)
 [ "$groups_path" = "$sandbox/.config/brew-watchtower/groups.conf" ]
 [ -f "$groups_path" ]
@@ -85,6 +90,19 @@ grep -q $'^G\thourly\thourly\t\t\t30\tinclude$' "$sandbox/groups.frequency.norma
 grep -q $'^G\tdaily\tdaily\t\t05\t00\tinclude$' "$sandbox/groups.frequency.normalized"
 grep -q $'^G\tweekly\tweekly\tmon\t09\t30\tinclude$' "$sandbox/groups.frequency.normalized"
 grep -q $'^G\tmonthly\tmonthly\t1\t10\t00\tinclude$' "$sandbox/groups.frequency.normalized"
+
+# Schedule serialization is intentionally pure: these fragments go inside
+# LaunchAgent StartCalendarInterval dictionaries.
+REPO_ROOT="$repo_root" bash -c '
+  set -eu
+  PROGRAM=brew-watchtower
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/scheduler.sh"
+  [ "$(calendar_interval_xml hourly "" "" 30)" = "<key>Minute</key><integer>30</integer>" ]
+  [ "$(calendar_interval_xml daily "" 5 0)" = "<key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer>" ]
+  [ "$(calendar_interval_xml weekly mon 9 30)" = "<key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer>" ]
+  [ "$(calendar_interval_xml monthly 1 10 0)" = "<key>Day</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer>" ]
+'
 printf '[group bad]\nformula=not allowed,auto\n' > "$sandbox/groups.invalid"
 if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   source "$REPO_ROOT/lib/runtime.sh"
@@ -120,6 +138,7 @@ if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   exit 1
 fi
 
+# Status blurb behavior, including disabled output.
 state_dir="$sandbox/Library/Application Support/Homebrew AutoUpdate"
 mkdir -p "$state_dir"
 cat > "$state_dir/security.status" <<'EOF'
@@ -135,6 +154,7 @@ printf '%s\n' "$blurb" | grep -q '⛫ Watchtower: security: update tailscale-app
 printf 'blurb=never\n' > "$sandbox/.config/brew-watchtower/config"
 [ -z "$(HOME="$sandbox" "$repo_root/bin/brew-watchtower" blurb)" ]
 
+# Package/group resolution uses a controlled Homebrew stand-in.
 fake_brew="$sandbox/fake-brew"
 cat > "$fake_brew" <<'EOF'
 #!/bin/bash
@@ -211,6 +231,7 @@ if TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root
   exit 1
 fi
 
+# Brewfile projection removes only entries resolved from excluded groups.
 cat > "$sandbox/project-source.Brewfile" <<'EOF'
 brew "git"
 cask "tailscale-app"
@@ -236,6 +257,7 @@ TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root" S
   grep -q "cask \"firefox\"" "$SANDBOX/projected.Brewfile"
 '
 
+# Prune previews and protected-runtime removal behavior.
 mkdir -p "$sandbox/prune-groups" "$sandbox/Library/LaunchAgents" "$sandbox/Library/Application Support/Homebrew AutoUpdate"
 printf '# type\ttoken\tmode\nformula\tgit\tauto\n' > "$sandbox/prune-groups/dev-tools.conf"
 printf '# type\ttoken\tmode\nformula\tripgrep\tauto\n' > "$sandbox/prune-groups/retired.conf"
@@ -272,6 +294,8 @@ TEST_GROUP_DIR="$sandbox/prune-groups" REPO_ROOT="$repo_root" SANDBOX="$sandbox"
   [ ! -e "$SANDBOX/Library/LaunchAgents/local.homebrew-autoupdate.retired.plist" ]
   [ ! -e "$SANDBOX/Library/Application Support/Homebrew AutoUpdate/retired.status" ]
 '
+
+# Drift repair keeps a bounded backup before replacing a curated Brewfile.
 mkdir -p "$sandbox/curated"
 printf '# curated\nbrew "old-package"\n' > "$sandbox/curated/Brewfile"
 cat > "$sandbox/.config/brew-watchtower/config" <<EOF
@@ -312,6 +336,7 @@ HOME="$sandbox" TEST_BREW="$fake_brew" REPO_ROOT="$repo_root" bash -c '
 '
 
 if command -v mandoc >/dev/null 2>&1; then
+  # Validate the manual only where mandoc is available.
   mandoc -T lint "$repo_root/man/brew-watchtower.1"
 fi
 

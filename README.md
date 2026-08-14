@@ -81,12 +81,12 @@ Edit `~/.config/brew-watchtower/groups.conf`:
 
 ```ini
 [group security]
-schedule=09:30
+schedule=daily@09:30
 cask=tailscale-app,interactive
 cask=firefox,auto
 
 [group dev-tools]
-schedule=05:00
+schedule=weekly@mon,05:00
 formula=git,auto
 formula=ripgrep,auto
 # Match currently installed Python formulae. The group output resolves this to
@@ -102,10 +102,25 @@ brew-watchtower groups sync
 
 Sync validates the entire file before requesting sudo. It replaces only groups
 named in the manifest; installed groups that are absent remain untouched until
-you explicitly prune them. A schedule is optional; when present it creates or
-replaces that group's daily LaunchAgent. After upgrading Watchtower, run
+you explicitly prune them. A schedule is optional. Use `hourly@MM`,
+`daily@HH:MM`, `weekly@DAY,HH:MM`, or `monthly@DAY,HH:MM`; the older plain
+`HH:MM` form remains a daily schedule. A monthly date that does not exist in a
+month simply has no launchd run that month. When present, a schedule creates or
+replaces that group's LaunchAgent. After upgrading Watchtower, run
 `brew-watchtower setup` once before the first sync to refresh the protected
 runtime.
+
+By default, every resolved package contributes to Brewfile drift checks and
+generated exports. Add `brewfile=exclude` inside a group to omit that group's
+currently resolved packages from both operations. This is useful for
+machine-specific desktop or creative software while keeping the rest of a
+curated Brewfile portable:
+
+```ini
+[group desktop-and-creative]
+brewfile=exclude
+cask=example-machine-specific-app,interactive
+```
 
 Set the following user-configuration option when this manifest is the source of
 truth (for example, when it is Stow-managed):
@@ -298,7 +313,7 @@ brew-watchtower remove security firefox
 | `brew-watchtower config init` | Create a missing default user config |
 | `brew-watchtower config show` | Print effective user config values |
 | `brew-watchtower config path` | Print the user config path |
-| `brew-watchtower schedule GROUP HOUR MINUTE` | Create or replace a daily schedule |
+| `brew-watchtower schedule GROUP HOUR MINUTE` | Create or replace a legacy daily schedule |
 | `brew-watchtower setup [HOUR [MINUTE]]` | Install or refresh the protected runtime |
 
 ### Shell completion
@@ -409,7 +424,7 @@ installed to `~/.local/share/{zsh/site-functions,bash-completion/completions}`.
 `~/.local/bin` precedes Homebrew on `PATH` while testing it.
 
 ```bash
-make verify-release VERSION=0.9.0
+make verify-release VERSION=0.10.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and

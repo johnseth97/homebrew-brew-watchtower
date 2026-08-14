@@ -1,4 +1,4 @@
-.TH BREW-WATCHTOWER 1 "2026-08-14" "brew-watchtower 0.9.0" "User Commands"
+.TH BREW-WATCHTOWER 1 "2026-08-14" "brew-watchtower 0.10.0" "User Commands"
 .SH NAME
 brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
 .SH SYNOPSIS
@@ -279,7 +279,29 @@ formula openssl@3        auto
 .PP
 The user-owned
 .I groups.conf
-manifest accepts exact entries with
+manifest uses stanzas beginning with
+.BR [group\ NAME] .
+Within a stanza,
+.B schedule=
+accepts
+.BR hourly@MM ,
+.BR daily@HH:MM ,
+.BR weekly@DAY,HH:MM ,
+or
+.BR monthly@DAY,HH:MM .
+The legacy
+.B HH:MM
+form remains a daily schedule. For a monthly schedule, a date that does not
+exist in a calendar month is skipped by launchd.
+.PP
+Each stanza may also set
+.B brewfile=include
+or
+.BR brewfile=exclude .
+The default is include. Excluded groups' currently resolved packages are left
+out of Brewfile drift comparisons and generated Brewfile exports.
+.PP
+The manifest accepts exact entries with
 .B formula=TOKEN,MODE
 and
 .BR cask=TOKEN,MODE ,
