@@ -266,7 +266,6 @@ cmd_check_or_run() {
   pending_interactive=""
   while IFS="$(printf '\t')" read -r type token mode; do
     [ -n "$type" ] || continue
-    valid_token "$token" || { echo "Rejected invalid token in $file: $token"; continue; }
     case "$type:$mode" in formula:auto|formula:interactive|cask:auto|cask:interactive) ;; *) echo "Rejected invalid entry: $type $token $mode"; continue ;; esac
     if outdated_token "$type" "$token"; then
       echo "OUTDATED $type $token mode=$mode"
@@ -277,7 +276,7 @@ cmd_check_or_run() {
       fi
     fi
   done <<EOF
-$(read_entries "$file")
+$(resolve_entries "$file")
 EOF
 
   failures=0
@@ -341,4 +340,3 @@ cmd_status() {
   done
   [ "$found" -eq 1 ] || echo "No runs recorded yet."
 }
-

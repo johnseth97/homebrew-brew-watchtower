@@ -42,9 +42,11 @@ cat > "$groups_path" <<'EOF'
 schedule=09:30
 cask=tailscale-app,interactive
 cask=firefox,auto
+cask_glob=visual-studio-code*,interactive
 
 [group dev-tools]
 formula=git,auto
+formula_glob=python@*,auto
 EOF
 normalized="$sandbox/groups.normalized"
 PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
@@ -54,7 +56,9 @@ PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
 ' _ "$groups_path" "$normalized"
 grep -q $'^G\tsecurity\t09\t30$' "$normalized"
 grep -q $'^I\tsecurity\tcask\ttailscale-app\tinteractive$' "$normalized"
+grep -q $'^I\tsecurity\tcask\tvisual-studio-code\*\tinteractive$' "$normalized"
 grep -q $'^I\tdev-tools\tformula\tgit\tauto$' "$normalized"
+grep -q $'^I\tdev-tools\tformula\tpython@\*\tauto$' "$normalized"
 printf '[group bad]\nformula=not allowed,auto\n' > "$sandbox/groups.invalid"
 if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   source "$REPO_ROOT/lib/runtime.sh"
@@ -62,6 +66,15 @@ if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   parse_groups_manifest "$1" "$2"
 ' _ "$sandbox/groups.invalid" "$sandbox/groups.invalid.out" 2>/dev/null; then
   echo "invalid groups manifest unexpectedly passed" >&2
+  exit 1
+fi
+printf '[group bad]\nformula_glob=python,auto\n' > "$sandbox/groups.invalid-glob"
+if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  parse_groups_manifest "$1" "$2"
+' _ "$sandbox/groups.invalid-glob" "$sandbox/groups.invalid-glob.out" 2>/dev/null; then
+  echo "glob-free selector unexpectedly passed" >&2
   exit 1
 fi
 
@@ -84,6 +97,13 @@ fake_brew="$sandbox/fake-brew"
 cat > "$fake_brew" <<'EOF'
 #!/bin/bash
 set -eu
+if [ "$1" = list ]; then
+  case "$2" in
+    --formula) printf '%s\n' git python@3.12 python@3.13 ripgrep ;;
+    --cask) printf '%s\n' firefox tailscale-app visual-studio-code visual-studio-code-insiders ;;
+  esac
+  exit 0
+fi
 if [ "$1" = bundle ] && [ "$2" = dump ]; then
   shift 2
   while [ $# -gt 0 ]; do
@@ -107,6 +127,43 @@ fi
 exit 1
 EOF
 chmod 700 "$fake_brew"
+mkdir -p "$sandbox/groups"
+cat > "$sandbox/groups/dev-tools.conf" <<'EOF'
+# type	selector	mode
+formula	git	auto
+formula	python@*	auto
+cask	visual-studio-code*	interactive
+EOF
+resolved_groups=$(TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root" bash -c '
+  set -eu
+  PROGRAM=brew-watchtower
+  BREW="$TEST_BREW"
+  GROUP_DIR="$TEST_GROUP_DIR"
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  cmd_groups
+')
+printf '%s\n' "$resolved_groups" | grep -q '^\[dev-tools\] 5 matched item(s)$'
+printf '%s\n' "$resolved_groups" | grep -q '^  formula  python@3.12'
+printf '%s\n' "$resolved_groups" | grep -q '^  formula  python@3.13'
+printf '%s\n' "$resolved_groups" | grep -q '^  cask     visual-studio-code '
+printf '%s\n' "$resolved_groups" | grep -q '^  cask     visual-studio-code-insiders '
+cat > "$sandbox/groups/conflict.conf" <<'EOF'
+formula	python@*	auto
+formula	python@3.12	interactive
+EOF
+if TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root" bash -c '
+  set -eu
+  PROGRAM=brew-watchtower
+  BREW="$TEST_BREW"
+  GROUP_DIR="$TEST_GROUP_DIR"
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  resolve_entries "$GROUP_DIR/conflict.conf"
+' >/dev/null 2>&1; then
+  echo "conflicting selector modes unexpectedly passed" >&2
+  exit 1
+fi
 mkdir -p "$sandbox/curated"
 printf '# curated\nbrew "old-package"\n' > "$sandbox/curated/Brewfile"
 cat > "$sandbox/.config/brew-watchtower/config" <<EOF

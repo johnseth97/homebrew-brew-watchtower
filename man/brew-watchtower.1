@@ -26,7 +26,8 @@ the group registry is root-owned.
 .SH COMMANDS
 .TP
 .B groups
-List all configured groups and the number of items in each group.
+List all configured groups and the exact installed packages currently matched
+by each group's policy.
 .TP
 .B groups " [" init "|" sync "|" path "]"
 List installed groups when called without an argument.
@@ -37,6 +38,10 @@ validates and applies declared groups through the protected runtime, leaving
 undeclared installed groups unchanged.
 .B groups path
 prints the manifest path.
+.PP
+When a group uses glob selectors, this command resolves them against installed
+formulae and casks. It does not run
+.BR "brew update" .
 .TP
 .B list " [" GROUP "]"
 List every configured item. If
@@ -241,10 +246,11 @@ Create another daily schedule with:
 brew-watchtower schedule dev-tools 5 0
 .fi
 .SH GROUP FILE FORMAT
-Group files are tab-delimited declarative data with three fields:
+The protected group registry stores tab-delimited declarative data with three
+fields:
 .PP
 .nf
-TYPE    TOKEN    MODE
+TYPE    SELECTOR    MODE
 .fi
 .PP
 For example:
@@ -253,6 +259,29 @@ For example:
 cask    tailscale-app    interactive
 formula openssl@3        auto
 .fi
+.PP
+The user-owned
+.I groups.conf
+manifest accepts exact entries with
+.B formula=TOKEN,MODE
+and
+.BR cask=TOKEN,MODE ,
+plus shell-style selectors with
+.B formula_glob=PATTERN,MODE
+and
+.BR cask_glob=PATTERN,MODE .
+Glob patterns support
+.BR * ,
+.BR ? ,
+and bracket expressions such as
+.BR [0-9] .
+They match installed packages of the declared type only. Resolution occurs
+when groups are displayed, checked, or run, so later installed matching
+packages become subject to the declared mode. Use
+.B brew-watchtower groups
+or
+.B brew-watchtower list GROUP
+to inspect the exact packages currently matched.
 .PP
 Blank lines and lines beginning with a number sign are ignored. Group files are
 never sourced or evaluated as shell code. Group names and all fields are

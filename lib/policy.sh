@@ -10,14 +10,71 @@ read_entries() {
   ' "$file"
 }
 
+valid_selector() {
+  case "$1" in
+    ''|*[!A-Za-z0-9@+._/\*?\[\]-]*) return 1 ;;
+    /*|*..*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+has_glob() {
+  case "$1" in *\**|*\?*|*\[*) return 0 ;; *) return 1 ;; esac
+}
+
+installed_tokens() {
+  case "$1" in
+    formula) "$BREW" list --formula 2>/dev/null ;;
+    cask) "$BREW" list --cask 2>/dev/null ;;
+    *) return 1 ;;
+  esac
+}
+
+# Expand exact tokens and shell-style glob selectors against packages installed
+# on this host. The selector is used only as a `case` pattern; it is never
+# evaluated as shell code. A conflicting mode for the same resolved package is
+# rejected rather than making an unattended-update decision implicitly.
+resolve_entries() {
+  file=$1
+  matches=$(mktemp /tmp/brew-watchtower-matches.XXXXXX) || return 1
+  while IFS="$(printf '\t')" read -r type selector mode; do
+    [ -n "$type" ] || continue
+    case "$type:$mode" in formula:auto|formula:interactive|cask:auto|cask:interactive) ;; *) printf 'Rejected invalid entry: %s %s %s\n' "$type" "$selector" "$mode" >&2; rm -f "$matches"; return 1 ;; esac
+    valid_selector "$selector" || { printf 'Rejected invalid selector in %s: %s\n' "$file" "$selector" >&2; rm -f "$matches"; return 1; }
+    installed=$(installed_tokens "$type") || { printf 'Could not list installed %ss.\n' "$type" >&2; rm -f "$matches"; return 1; }
+    while IFS= read -r token; do
+      [ -n "$token" ] || continue
+      case "$token" in
+        $selector) printf '%s\t%s\t%s\n' "$type" "$token" "$mode" >> "$matches" ;;
+      esac
+    done <<EOF
+$installed
+EOF
+  done <<EOF
+$(read_entries "$file")
+EOF
+
+  if ! awk -F "$(printf '\t')" '
+    { key = $1 FS $2; if (mode[key] != "" && mode[key] != $3) { printf "Conflicting modes for %s: %s and %s\\n", key, mode[key], $3 > "/dev/stderr"; failed = 1 } mode[key] = $3 }
+    END { exit failed }
+  ' "$matches"; then
+    rm -f "$matches"
+    return 1
+  fi
+  sort -u "$matches"
+  rm -f "$matches"
+}
+
 
 cmd_groups() {
   [ -d "$GROUP_DIR" ] || return 0
   for file in "$GROUP_DIR"/*.conf; do
     [ -f "$file" ] || continue
     name=$(basename "$file" .conf)
-    count=$(read_entries "$file" | wc -l | tr -d ' ')
-    printf '%-20s %s item(s)\n' "$name" "$count"
+    matches=$(resolve_entries "$file") || die "could not resolve group: $name"
+    count=$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')
+    printf '[%s] %s matched item(s)\n' "$name" "$count"
+    [ -z "$matches" ] || printf '%s\n' "$matches" | awk -F "$(printf '\t')" '{printf "  %-8s %-32s %s\n", $1, $2, $3}'
   done
 }
 
@@ -28,14 +85,14 @@ cmd_list() {
       [ -f "$file" ] || continue
       name=$(basename "$file" .conf)
       echo "[$name]"
-      read_entries "$file" | awk -F '\t' '{printf "  %-8s %-32s %s\n", $1, $2, $3}'
+      resolve_entries "$file" | awk -F '\t' '{printf "  %-8s %-32s %s\n", $1, $2, $3}'
     done
     return
   fi
   valid_group "$1" || die "invalid group name: $1"
   file=$(group_file "$1")
   [ -f "$file" ] || die "unknown group: $1"
-  read_entries "$file" | awk -F '\t' '{printf "%-8s %-32s %s\n", $1, $2, $3}'
+  resolve_entries "$file" | awk -F '\t' '{printf "%-8s %-32s %s\n", $1, $2, $3}'
 }
 
 
@@ -88,7 +145,8 @@ cmd_remove() {
 # groups.conf is a strict, declarative stanza format. It is parsed, never
 # sourced, so a Stow-managed file cannot execute code during a privileged sync.
 # Normalized records are G<TAB>group<TAB>hour<TAB>minute and
-# I<TAB>group<TAB>type<TAB>token<TAB>mode.
+# I<TAB>group<TAB>type<TAB>selector<TAB>mode. Selectors are exact package
+# tokens or shell-style globs and resolve against installed packages at use.
 parse_groups_manifest() {
   manifest_source=$1
   manifest_output=$2
@@ -136,23 +194,28 @@ parse_groups_manifest() {
         manifest_minute=${manifest_schedule#*:}
         [ "$manifest_hour" -le 23 ] || { printf 'groups.conf:%s: hour must be 00 through 23\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
         ;;
-      formula=*|cask=*)
-        manifest_type=${manifest_line%%=*}
+      formula=*|cask=*|formula_glob=*|cask_glob=*)
+        manifest_key=${manifest_line%%=*}
+        manifest_type=${manifest_key%_glob}
         manifest_value=${manifest_line#*=}
-        manifest_token=${manifest_value%%,*}
+        manifest_selector=${manifest_value%%,*}
         manifest_mode=${manifest_value#*,}
-        [ "$manifest_token,$manifest_mode" = "$manifest_value" ] || { printf 'groups.conf:%s: item must be TOKEN,MODE\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
-        valid_token "$manifest_token" || { printf 'groups.conf:%s: invalid token\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        [ "$manifest_selector,$manifest_mode" = "$manifest_value" ] || { printf 'groups.conf:%s: item must be SELECTOR,MODE\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        if [ "$manifest_key" = "$manifest_type" ]; then
+          valid_token "$manifest_selector" || { printf 'groups.conf:%s: invalid token\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        else
+          valid_selector "$manifest_selector" && has_glob "$manifest_selector" || { printf 'groups.conf:%s: glob selector must contain *, ?, or []\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        fi
         case "$manifest_mode" in auto|interactive) ;; *) printf 'groups.conf:%s: mode must be auto or interactive\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1 ;; esac
-        if awk -F '\t' -v token="$manifest_token" '$4 == token { found=1 } END { exit !found }' "$manifest_entries"; then
-          printf 'groups.conf:%s: duplicate token in %s\n' "$manifest_line_number" "$manifest_group" >&2
+        if awk -F '\t' -v type="$manifest_type" -v selector="$manifest_selector" '$3 == type && $4 == selector { found=1 } END { exit !found }' "$manifest_entries"; then
+          printf 'groups.conf:%s: duplicate selector in %s\n' "$manifest_line_number" "$manifest_group" >&2
           rm -f "$manifest_entries"
           return 1
         fi
-        printf 'I\t%s\t%s\t%s\t%s\n' "$manifest_group" "$manifest_type" "$manifest_token" "$manifest_mode" >> "$manifest_entries"
+        printf 'I\t%s\t%s\t%s\t%s\n' "$manifest_group" "$manifest_type" "$manifest_selector" "$manifest_mode" >> "$manifest_entries"
         ;;
       *)
-        printf 'groups.conf:%s: expected [group NAME], schedule=HH:MM, formula=TOKEN,MODE, or cask=TOKEN,MODE\n' "$manifest_line_number" >&2
+        printf 'groups.conf:%s: expected [group NAME], schedule=HH:MM, formula=TOKEN,MODE, cask=TOKEN,MODE, formula_glob=PATTERN,MODE, or cask_glob=PATTERN,MODE\n' "$manifest_line_number" >&2
         rm -f "$manifest_entries"
         return 1
         ;;
@@ -172,7 +235,8 @@ cmd_groups_init() {
   [ ! -e "$groups_file" ] || die "groups config already exists: $groups_file"
   cat > "$groups_file" <<'GROUPS_EOF'
 # Declarative Watchtower group policy. Run: brew-watchtower groups sync
-# Syntax: [group NAME], schedule=HH:MM, formula=TOKEN,MODE, cask=TOKEN,MODE
+# Syntax: [group NAME], schedule=HH:MM, formula=TOKEN,MODE, cask=TOKEN,MODE,
+# formula_glob=PATTERN,MODE, cask_glob=PATTERN,MODE
 # MODE is auto or interactive. Only groups declared here are changed by sync.
 
 [group security]
@@ -184,6 +248,7 @@ schedule=09:30
 schedule=05:00
 # formula=git,auto
 # formula=ripgrep,auto
+# formula_glob=python@*,auto
 GROUPS_EOF
   chmod 600 "$groups_file"
   printf 'Created %s\n' "$groups_file"

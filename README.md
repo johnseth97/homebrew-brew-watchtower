@@ -89,6 +89,9 @@ cask=firefox,auto
 schedule=05:00
 formula=git,auto
 formula=ripgrep,auto
+# Match currently installed Python formulae. The group output resolves this to
+# exact names before any update is run.
+formula_glob=python@*,auto
 ```
 
 Then apply it:
@@ -102,6 +105,24 @@ named in the manifest; installed groups that are absent remain untouched. A
 schedule is optional; when present it creates or replaces that group's daily
 LaunchAgent. After upgrading Watchtower, run `brew-watchtower setup` once before
 the first sync to refresh the protected runtime.
+
+`formula_glob` and `cask_glob` accept shell-style glob patterns (`*`, `?`, and
+bracket expressions such as `[0-9]`). They match **installed** packages of the
+matching type only. Selectors remain dynamic: a later installed package that
+matches a group selector is subject to that group's mode on the next check or
+run. Exact `formula=` and `cask=` entries remain available when you want a
+fixed package name.
+
+Always inspect the resolved policy after syncing:
+
+```bash
+brew-watchtower groups
+brew-watchtower list dev-tools
+```
+
+Both commands resolve selectors against the installed Homebrew formulae and
+casks and print the exact packages currently caught by each group. A selector
+that matches nothing is valid and appears as `0 matched item(s)`.
 
 ## Shell status blurb and Brewfile drift
 
@@ -202,7 +223,7 @@ brew-watchtower remove security firefox
 
 | Command | Purpose |
 |---|---|
-| `brew-watchtower groups` | List configured groups and item counts |
+| `brew-watchtower groups` | List groups and the exact installed packages currently matched by their policy |
 | `brew-watchtower groups init` | Create a missing declarative `groups.conf` template |
 | `brew-watchtower groups sync` | Validate and apply only manifest-declared groups and schedules |
 | `brew-watchtower groups path` | Print the declarative manifest path |
@@ -290,7 +311,9 @@ brew-watchtower status security
 | `~/Library/Application Support/Homebrew AutoUpdate` | installing user | `0700` |
 | `~/Library/Caches/Homebrew AutoUpdate` | installing user | `0700` |
 
-Group files contain tab-delimited declarative data. They are never sourced or evaluated as shell code.
+Group files contain tab-delimited declarative data. Their second field is an
+exact token or a validated shell-style selector. They are never sourced or
+evaluated as shell code.
 
 ## Security model
 
