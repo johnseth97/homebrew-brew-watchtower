@@ -285,7 +285,8 @@ make install PREFIX="$HOME/.local"
 ```
 
 The default launcher is `~/.local/bin/brew-watchtower-dev`; its isolated runtime
-and local completion files live in `~/.local/libexec/brew-watchtower-dev`.
+lives in `~/.local/libexec/brew-watchtower-dev`, while generated completions are
+installed to `~/.local/share/{zsh/site-functions,bash-completion/completions}`.
 `make uninstall` removes only that development installation. Ensure
 `~/.local/bin` precedes Homebrew on `PATH` while testing it.
 
