@@ -351,7 +351,7 @@ installed to `~/.local/share/{zsh/site-functions,bash-completion/completions}`.
 `~/.local/bin` precedes Homebrew on `PATH` while testing it.
 
 ```bash
-make verify-release VERSION=0.6.0
+make verify-release VERSION=0.7.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and
