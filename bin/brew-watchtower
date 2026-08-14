@@ -5,7 +5,7 @@ set -u
 umask 077
 
 readonly PROGRAM="brew-watchtower"
-readonly VERSION="0.5.1"
+readonly VERSION="0.6.0"
 readonly BREW="/opt/homebrew/bin/brew"
 readonly POLICY_ROOT="/Library/Application Support/Homebrew AutoUpdate"
 readonly GROUP_DIR="$POLICY_ROOT/groups"
@@ -39,7 +39,15 @@ done
 command=${1:-help}
 [ $# -eq 0 ] || shift
 case "$command" in
-  groups) [ $# -eq 0 ] || die "groups takes no arguments"; cmd_groups ;;
+  groups)
+    case "${1:-}" in
+      '') [ $# -eq 0 ] || die "groups takes no arguments"; cmd_groups ;;
+      init) [ $# -eq 1 ] || die "groups init takes no arguments"; cmd_groups_init ;;
+      sync) [ $# -eq 1 ] || die "groups sync takes no arguments"; cmd_groups_sync ;;
+      path) [ $# -eq 1 ] || die "groups path takes no arguments"; cmd_groups_path ;;
+      *) die "groups requires: init, sync, path, or no arguments" ;;
+    esac
+    ;;
   list) [ $# -le 1 ] || die "list takes at most one group"; cmd_list "$@" ;;
   add) cmd_add "$@" ;;
   remove) cmd_remove "$@" ;;
@@ -79,6 +87,7 @@ config)
   schedule) cmd_schedule "$@" ;;
   __setup) cmd_setup_internal "$@" ;;
   __schedule) cmd_schedule_internal "$@" ;;
+  __groups_sync) cmd_groups_sync_internal "$@" ;;
   version) echo "$PROGRAM $VERSION" ;;
   help|-h|--help) usage ;;
   *) usage >&2; die "unknown command: $command" ;;

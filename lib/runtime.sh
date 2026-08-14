@@ -4,7 +4,7 @@
 usage() {
   cat <<'EOF'
 Usage:
-  brew-watchtower groups
+  brew-watchtower groups [init|sync|path]
   brew-watchtower list [GROUP]
   brew-watchtower add GROUP TYPE TOKEN [MODE]
   brew-watchtower remove GROUP TOKEN
@@ -24,6 +24,8 @@ TYPE: formula | cask
 MODE: auto | interactive   (default: auto)
 
 Examples:
+  brew-watchtower groups init
+  brew-watchtower groups sync
   brew-watchtower add security cask tailscale-app interactive
   brew-watchtower list security
   brew-watchtower check security
@@ -79,6 +81,7 @@ cmd_config_show() {
   [ $# -eq 0 ] || die "config show takes no arguments"
   load_config
   printf 'config=%s\n' "$CONFIG_FILE"
+  printf 'groups_file=%s\n' "$CONFIG_DIR/groups.conf"
   printf 'blurb=%s\n' "$blurb"
   printf 'prefix=%s\n' "$prefix"
   printf 'detect_brewfile_drift=%s\n' "$detect_brewfile_drift"

@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.5.1" ]
+[ "$output" = "brew-watchtower 0.6.0" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
 for completion in completions/brew-watchtower.bash completions/_brew-watchtower; do
@@ -31,6 +31,39 @@ printf '%s\n' "$config_show" | grep -q '^detect_brewfile_drift=1$'
 printf '%s\n' "$config_show" | grep -q '^auto_fix_brewfile_drift=0$'
 printf '%s\n' "$config_show" | grep -q '^brewfile_backup_keep=5$'
 printf '%s\n' "$config_show" | grep -q '^brewfile_backup_max_age_days=0$'
+printf '%s\n' "$config_show" | grep -q "^groups_file=$sandbox/.config/brew-watchtower/groups.conf$"
+
+HOME="$sandbox" "$repo_root/bin/brew-watchtower" groups init >/dev/null
+groups_path=$(HOME="$sandbox" "$repo_root/bin/brew-watchtower" groups path)
+[ "$groups_path" = "$sandbox/.config/brew-watchtower/groups.conf" ]
+[ -f "$groups_path" ]
+cat > "$groups_path" <<'EOF'
+[group security]
+schedule=09:30
+cask=tailscale-app,interactive
+cask=firefox,auto
+
+[group dev-tools]
+formula=git,auto
+EOF
+normalized="$sandbox/groups.normalized"
+PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  parse_groups_manifest "$1" "$2"
+' _ "$groups_path" "$normalized"
+grep -q $'^G\tsecurity\t09\t30$' "$normalized"
+grep -q $'^I\tsecurity\tcask\ttailscale-app\tinteractive$' "$normalized"
+grep -q $'^I\tdev-tools\tformula\tgit\tauto$' "$normalized"
+printf '[group bad]\nformula=not allowed,auto\n' > "$sandbox/groups.invalid"
+if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  parse_groups_manifest "$1" "$2"
+' _ "$sandbox/groups.invalid" "$sandbox/groups.invalid.out" 2>/dev/null; then
+  echo "invalid groups manifest unexpectedly passed" >&2
+  exit 1
+fi
 
 state_dir="$sandbox/Library/Application Support/Homebrew AutoUpdate"
 mkdir -p "$state_dir"

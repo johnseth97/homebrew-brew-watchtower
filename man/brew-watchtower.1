@@ -1,4 +1,4 @@
-.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.5.1" "User Commands"
+.TH BREW-WATCHTOWER 1 "2026-08-12" "brew-watchtower 0.6.0" "User Commands"
 .SH NAME
 brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
 .SH SYNOPSIS
@@ -27,6 +27,16 @@ the group registry is root-owned.
 .TP
 .B groups
 List all configured groups and the number of items in each group.
+.TP
+.B groups " [" init "|" sync "|" path "]"
+List installed groups when called without an argument.
+.B groups init
+creates a user-owned declarative groups.conf template.
+.B groups sync
+validates and applies declared groups through the protected runtime, leaving
+undeclared installed groups unchanged.
+.B groups path
+prints the manifest path.
 .TP
 .B list " [" GROUP "]"
 List every configured item. If

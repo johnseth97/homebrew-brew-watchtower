@@ -25,6 +25,11 @@ _brew_watchtower() {
   fi
 
   case "$command" in
+    groups)
+      if [[ $COMP_CWORD -eq 2 ]]; then
+        COMPREPLY=( $(compgen -W 'init sync path' -- "$cur") )
+      fi
+      ;;
     check|run|status)
       COMPREPLY=( $(compgen -W "$(_brew_watchtower_groups)" -- "$cur") )
       ;;

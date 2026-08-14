@@ -69,6 +69,40 @@ brew-watchtower run security
 brew-watchtower status security
 ```
 
+## Declarative groups
+
+For a Stow-managed, dependency-free group manifest, create:
+
+```bash
+brew-watchtower groups init
+```
+
+Edit `~/.config/brew-watchtower/groups.conf`:
+
+```ini
+[group security]
+schedule=09:30
+cask=tailscale-app,interactive
+cask=firefox,auto
+
+[group dev-tools]
+schedule=05:00
+formula=git,auto
+formula=ripgrep,auto
+```
+
+Then apply it:
+
+```bash
+brew-watchtower groups sync
+```
+
+Sync validates the entire file before requesting sudo. It replaces only groups
+named in the manifest; installed groups that are absent remain untouched. A
+schedule is optional; when present it creates or replaces that group's daily
+LaunchAgent. After upgrading Watchtower, run `brew-watchtower setup` once before
+the first sync to refresh the protected runtime.
+
 ## Shell status blurb and Brewfile drift
 
 Watchtower can print a compact, actionable status line when a shell starts. The
@@ -169,6 +203,9 @@ brew-watchtower remove security firefox
 | Command | Purpose |
 |---|---|
 | `brew-watchtower groups` | List configured groups and item counts |
+| `brew-watchtower groups init` | Create a missing declarative `groups.conf` template |
+| `brew-watchtower groups sync` | Validate and apply only manifest-declared groups and schedules |
+| `brew-watchtower groups path` | Print the declarative manifest path |
 | `brew-watchtower list [GROUP]` | List all items or one group’s contents |
 | `brew-watchtower add GROUP TYPE TOKEN [MODE]` | Add or replace a group entry |
 | `brew-watchtower remove GROUP TOKEN` | Remove an entry |
@@ -291,7 +328,7 @@ installed to `~/.local/share/{zsh/site-functions,bash-completion/completions}`.
 `~/.local/bin` precedes Homebrew on `PATH` while testing it.
 
 ```bash
-make verify-release VERSION=0.5.1
+make verify-release VERSION=0.6.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and
