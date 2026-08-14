@@ -55,6 +55,7 @@ case "$command" in
   check) [ $# -eq 1 ] || die "check requires GROUP"; cmd_check_or_run check "$1" ;;
   run) [ $# -eq 1 ] || die "run requires GROUP"; cmd_check_or_run run "$1" ;;
   status) [ $# -le 1 ] || die "status takes at most one group"; cmd_status "$@" ;;
+  acknowledge) [ $# -le 1 ] || die "acknowledge takes optional GROUP or all"; cmd_acknowledge "${1:-all}" ;;
   drift)
     case "${1:-}" in
       '') [ $# -eq 0 ] || die "drift takes no arguments"; cmd_drift ;;

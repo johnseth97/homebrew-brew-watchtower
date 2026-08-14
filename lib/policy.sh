@@ -22,6 +22,37 @@ has_glob() {
   case "$1" in *\**|*\?*|*\[*) return 0 ;; *) return 1 ;; esac
 }
 
+# Classify only Homebrew-declared privilege requirements. Vendor application
+# behavior after a normal app install is intentionally reported as unknown.
+privilege_class() {
+  type=$1 token=$2
+  [ "$type" = cask ] || { printf 'none\n'; return; }
+  source=$("$BREW" cat --cask "$token" 2>/dev/null) || { printf 'unknown\n'; return; }
+  if printf '%s\n' "$source" | grep -Eq '^[[:space:]]*pkg[[:space:]]|sudo:[[:space:]]*true'; then
+    printf 'root-required\n'
+  elif printf '%s\n' "$source" | grep -Eq '^[[:space:]]*installer[[:space:]]'; then
+    printf 'privilege-possible\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+privileged_auto_allowed() {
+  load_config
+  case ",$privileged_auto_allow," in *,"$1:$2",*) return 0 ;; *) return 1 ;; esac
+}
+
+effective_mode() {
+  type=$1 token=$2 mode=$3
+  [ "$mode" = auto ] || { printf '%s\n' "$mode"; return; }
+  class=$(privilege_class "$type" "$token")
+  if [ "$class" = root-required ] && ! privileged_auto_allowed "$type" "$token"; then
+    printf 'interactive\n'
+  else
+    printf 'auto\n'
+  fi
+}
+
 installed_tokens() {
   case "$1" in
     formula) "$BREW" list --formula 2>/dev/null ;;
@@ -104,6 +135,11 @@ cmd_add() {
   valid_token "$token" || die "invalid Homebrew token: $token"
   case "$type" in formula|cask) ;; *) die "TYPE must be formula or cask" ;; esac
   case "$mode" in auto|interactive) ;; *) die "MODE must be auto or interactive" ;; esac
+  effective=$(effective_mode "$type" "$token" "$mode")
+  if [ "$mode" = auto ] && [ "$effective" = interactive ]; then
+    printf '%s is root-required; storing it as interactive (set privileged_auto_allow=%s:%s to override).\n' "$token" "$type" "$token" >&2
+    mode=interactive
+  fi
   escalate_mutation add "$group" "$type" "$token" "$mode"
 
   file=$(group_file "$group")
@@ -276,6 +312,14 @@ cmd_groups_sync() {
   normalized=$(mktemp /tmp/brew-watchtower-manifest.XXXXXX) || die "could not create temporary manifest"
   trap 'rm -f "$normalized"' EXIT HUP INT TERM
   parse_groups_manifest "$groups_file" "$normalized" || die "groups config is invalid: $groups_file"
+  while IFS="$(printf '\t')" read -r record group type selector mode; do
+    [ "$record:$type:$mode" = "I:cask:auto" ] || continue
+    has_glob "$selector" && continue
+    class=$(privilege_class "$type" "$selector")
+    if [ "$class" = root-required ] && ! privileged_auto_allowed "$type" "$selector"; then
+      printf 'Warning: %s/%s is root-required and will run as interactive until allow-listed.\n' "$group" "$selector" >&2
+    fi
+  done < "$normalized"
   rm -f "$normalized"
   trap - EXIT HUP INT TERM
   if [ "$(id -u)" -ne 0 ]; then

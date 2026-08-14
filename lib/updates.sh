@@ -217,11 +217,20 @@ cmd_blurb() {
     group=$(basename "$file" .status)
     result=$(awk -F= '$1 == "result" { print $2; exit }' "$file")
     pending=$(awk -F= '$1 == "pending_interactive" { print $2; exit }' "$file")
+    privileged=$(awk -F= '$1 == "pending_privileged" { print $2; exit }' "$file")
+    updated=$(awk -F= '$1 == "updated_auto" { print $2; exit }' "$file")
     drift=$(awk -F= '$1 == "brewfile_drift" { print $2; exit }' "$file")
+    fingerprint=$(printf '%s\n' "$result|$pending|$privileged|$updated|$drift" | cksum | awk '{print $1 ":" $2}')
+    acknowledged=$(cat "${file%.status}.ack" 2>/dev/null || true)
+    if [ "$blurb_alerts" = until_acknowledged ] && [ "$fingerprint" = "$acknowledged" ]; then
+      continue
+    fi
     last_run=$(awk -F= '$1 == "last_run" { print $2; exit }' "$file")
     case "$last_run" in ''|*[!0-9]*) ;; *) [ "$last_run" -gt "$newest" ] && newest=$last_run ;; esac
     [ "$result" = failed ] && messages="$messages; $group failed"
     [ -n "$pending" ] && messages="$messages; $group: update $pending"
+    [ -n "$privileged" ] && messages="$messages; $group: admin approval $privileged"
+    [ -n "$updated" ] && messages="$messages; $group: auto-updated $updated"
     if [ "$drift" = detected ] && [ "$drift_reported" = 0 ]; then
       messages="$messages; Brewfile drift detected"
       drift_reported=1
@@ -239,6 +248,24 @@ cmd_blurb() {
       printf '%s: all clear\n' "$prefix"
     fi
   fi
+}
+
+cmd_acknowledge() {
+  target=$1
+  case "$target" in all) files="$STATE_DIR"/*.status ;; *) valid_group "$target" || die "invalid group name: $target"; files="$STATE_DIR/$target.status" ;; esac
+  found=0
+  for file in $files; do
+    [ -f "$file" ] || continue
+    found=1
+    result=$(awk -F= '$1 == "result" { print $2; exit }' "$file")
+    pending=$(awk -F= '$1 == "pending_interactive" { print $2; exit }' "$file")
+    privileged=$(awk -F= '$1 == "pending_privileged" { print $2; exit }' "$file")
+    updated=$(awk -F= '$1 == "updated_auto" { print $2; exit }' "$file")
+    drift=$(awk -F= '$1 == "brewfile_drift" { print $2; exit }' "$file")
+    printf '%s\n' "$result|$pending|$privileged|$updated|$drift" | cksum | awk '{print $1 ":" $2}' > "${file%.status}.ack"
+  done
+  [ "$found" -eq 1 ] || die "no matching status to acknowledge"
+  echo "Acknowledged current Watchtower status."
 }
 
 
@@ -264,12 +291,16 @@ cmd_check_or_run() {
 
   pending_auto=""
   pending_interactive=""
+  pending_privileged=""
   while IFS="$(printf '\t')" read -r type token mode; do
     [ -n "$type" ] || continue
     case "$type:$mode" in formula:auto|formula:interactive|cask:auto|cask:interactive) ;; *) echo "Rejected invalid entry: $type $token $mode"; continue ;; esac
     if outdated_token "$type" "$token"; then
       echo "OUTDATED $type $token mode=$mode"
-      if [ "$mode" = interactive ]; then
+      effective=$(effective_mode "$type" "$token" "$mode")
+      if [ "$mode" = auto ] && [ "$effective" = interactive ]; then
+        pending_privileged="$pending_privileged $token"
+      elif [ "$mode" = interactive ]; then
         pending_interactive="$pending_interactive $token"
       else
         pending_auto="$pending_auto $type:$token"
@@ -280,14 +311,15 @@ $(resolve_entries "$file")
 EOF
 
   failures=0
+  updated_auto=""
   if [ "$action" = run ]; then
     for entry in $pending_auto; do
       type=${entry%%:*}; token=${entry#*:}
       echo "UPGRADING $type $token"
       if [ "$type" = cask ]; then
-        "$BREW" upgrade --cask --greedy-auto-updates "$token" || failures=$((failures + 1))
+        "$BREW" upgrade --cask --greedy-auto-updates "$token" && updated_auto="$updated_auto $token" || failures=$((failures + 1))
       else
-        "$BREW" upgrade --formula "$token" || failures=$((failures + 1))
+        "$BREW" upgrade --formula "$token" && updated_auto="$updated_auto $token" || failures=$((failures + 1))
       fi
     done
 
@@ -308,10 +340,13 @@ EOF
     notify "Homebrew AutoUpdate failed" "$group: $failures upgrade(s) failed; see $logfile"
     return 1
   fi
-  printf 'last_run=%s\nresult=success\npending_interactive=%s\n' "$now" "${pending_interactive# }" > "$statusfile"
+  printf 'last_run=%s\nresult=success\npending_interactive=%s\npending_privileged=%s\nupdated_auto=%s\n' "$now" "${pending_interactive# }" "${pending_privileged# }" "${updated_auto# }" > "$statusfile"
   record_brewfile_state "$statusfile"
   if [ -n "$pending_interactive" ]; then
     notify "Homebrew updates need attention" "$group:${pending_interactive}; run brew-watchtower run $group"
+  fi
+  if [ -n "$pending_privileged" ]; then
+    notify "Homebrew updates need admin approval" "$group:${pending_privileged# }; run brew-watchtower run $group"
   fi
   echo "Completed successfully."
 }
