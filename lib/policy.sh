@@ -188,7 +188,7 @@ require_mutable_groups() {
 
 # groups.conf is a strict, declarative stanza format. It is parsed, never
 # sourced, so a Stow-managed file cannot execute code during a privileged sync.
-# Normalized records are G<TAB>group<TAB>hour<TAB>minute and
+# Normalized records are G<TAB>group<TAB>frequency<TAB>day<TAB>hour<TAB>minute<TAB>brewfile-mode and
 # I<TAB>group<TAB>type<TAB>selector<TAB>mode. Selectors are exact package
 # tokens or shell-style globs and resolve against installed packages at use.
 parse_groups_manifest() {
@@ -197,18 +197,21 @@ parse_groups_manifest() {
   : > "$manifest_output" || return 1
   manifest_entries=$(mktemp /tmp/brew-watchtower-manifest.XXXXXX) || return 1
   manifest_group=""
+  manifest_frequency=""
+  manifest_day=""
   manifest_hour=""
   manifest_minute=""
+  manifest_brewfile=include
   manifest_line_number=0
 
   manifest_flush() {
     [ -n "$manifest_group" ] || return 0
-    printf 'G\t%s\t%s\t%s\n' "$manifest_group" "$manifest_hour" "$manifest_minute" >> "$manifest_output"
+    printf 'G\t%s\t%s\t%s\t%s\t%s\t%s\n' "$manifest_group" "$manifest_frequency" "$manifest_day" "$manifest_hour" "$manifest_minute" "$manifest_brewfile" >> "$manifest_output"
     cat "$manifest_entries" >> "$manifest_output"
     : > "$manifest_entries"
     manifest_group=""
-    manifest_hour=""
-    manifest_minute=""
+    manifest_frequency=""; manifest_day=""; manifest_hour=""; manifest_minute=""
+    manifest_brewfile=include
   }
 
   while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
@@ -231,12 +234,22 @@ parse_groups_manifest() {
 
     case "$manifest_line" in
       schedule=*)
-        [ -z "$manifest_hour" ] || { printf 'groups.conf:%s: duplicate schedule\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        [ -z "$manifest_frequency" ] || { printf 'groups.conf:%s: duplicate schedule\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
         manifest_schedule=${manifest_line#schedule=}
-        case "$manifest_schedule" in [0-2][0-9]:[0-5][0-9]) ;; *) printf 'groups.conf:%s: schedule must be HH:MM\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1 ;; esac
-        manifest_hour=${manifest_schedule%%:*}
-        manifest_minute=${manifest_schedule#*:}
-        [ "$manifest_hour" -le 23 ] || { printf 'groups.conf:%s: hour must be 00 through 23\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        case "$manifest_schedule" in
+          [0-2][0-9]:[0-5][0-9]) manifest_frequency=daily; manifest_hour=${manifest_schedule%%:*}; manifest_minute=${manifest_schedule#*:} ;;
+          hourly@[0-5][0-9]) manifest_frequency=hourly; manifest_minute=${manifest_schedule#*@} ;;
+          daily@[0-2][0-9]:[0-5][0-9]) manifest_frequency=daily; manifest_time=${manifest_schedule#*@}; manifest_hour=${manifest_time%%:*}; manifest_minute=${manifest_time#*:} ;;
+          weekly@*,[0-2][0-9]:[0-5][0-9]) manifest_frequency=weekly; manifest_day=${manifest_schedule#*@}; manifest_day=${manifest_day%%,*}; case "$manifest_day" in sun|mon|tue|wed|thu|fri|sat) ;; *) printf 'groups.conf:%s: invalid weekday\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1 ;; esac; manifest_time=${manifest_schedule##*,}; manifest_hour=${manifest_time%%:*}; manifest_minute=${manifest_time#*:} ;;
+          monthly@*,[0-2][0-9]:[0-5][0-9]) manifest_frequency=monthly; manifest_day=${manifest_schedule#*@}; manifest_day=${manifest_day%%,*}; case "$manifest_day" in [1-9]|[12][0-9]|3[01]) ;; *) printf 'groups.conf:%s: invalid month day\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1 ;; esac; manifest_time=${manifest_schedule##*,}; manifest_hour=${manifest_time%%:*}; manifest_minute=${manifest_time#*:} ;;
+          *) printf 'groups.conf:%s: schedule must be HH:MM, hourly@MM, daily@HH:MM, weekly@DAY,HH:MM, or monthly@DAY,HH:MM\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1 ;;
+        esac
+        [ -z "$manifest_hour" ] || [ "$manifest_hour" -le 23 ] || { printf 'groups.conf:%s: hour must be 00 through 23\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        ;;
+      brewfile=*)
+        [ "$manifest_brewfile" = include ] || { printf 'groups.conf:%s: duplicate brewfile selector\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
+        manifest_brewfile=${manifest_line#brewfile=}
+        case "$manifest_brewfile" in include|exclude) ;; *) printf 'groups.conf:%s: brewfile must be include or exclude\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1 ;; esac
         ;;
       formula=*|cask=*|formula_glob=*|cask_glob=*)
         manifest_key=${manifest_line%%=*}
@@ -340,14 +353,14 @@ cmd_groups_sync_internal() {
   trap 'rm -f "$normalized"' EXIT HUP INT TERM
   parse_groups_manifest "$groups_file" "$normalized" || die "groups config is invalid: $groups_file"
 
-  while IFS="$(printf '\t')" read -r record group hour minute; do
+  while IFS="$(printf '\t')" read -r record group frequency day hour minute brewfile_mode; do
     [ "$record" = G ] || continue
     tmp=$(mktemp /tmp/brew-watchtower-group.XXXXXX) || die "could not create group file"
     printf '# type\ttoken\tmode\n' > "$tmp"
     awk -F '\t' -v group="$group" '$1 == "I" && $2 == group { print $3 "\t" $4 "\t" $5 }' "$normalized" | sort -t "$(printf '\t')" -k2,2 >> "$tmp"
     install -o root -g wheel -m 0644 "$tmp" "$(group_file "$group")"
     rm -f "$tmp"
-    [ -z "$hour" ] || write_launchagent "$target_user" "$target_uid" "$target_home" "$group" "$hour" "$minute"
+    [ -z "$frequency" ] || write_launchagent "$target_user" "$target_uid" "$target_home" "$group" "$frequency" "$day" "$hour" "$minute"
   done < "$normalized"
   rm -f "$normalized"
   trap - EXIT HUP INT TERM

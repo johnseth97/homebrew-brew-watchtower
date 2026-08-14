@@ -31,7 +31,7 @@ while [ -L "$SCRIPT_PATH" ]; do
   case "$SCRIPT_PATH" in /*) ;; *) SCRIPT_PATH="$LINK_DIR/$SCRIPT_PATH" ;; esac
 done
 SCRIPT_DIR=$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)
-for module in runtime scheduler policy updates; do
+for module in runtime scheduler policy brewfile updates; do
   # shellcheck source=/dev/null
   source "$SCRIPT_DIR/../lib/$module.sh"
 done

@@ -54,10 +54,14 @@ perform_drift_fix() {
     backup_path=$(drift_backup_file "$brewfile") || return 1
     printf 'Backed up %s to %s\n' "$brewfile" "$backup_path"
   fi
-  HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$brewfile" || return 1
+  generated=$(mktemp "$CACHE_DIR/brew-watchtower-brewfile.XXXXXX") || return 1
+  HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$generated" || { rm -f "$generated"; return 1; }
+  project_brewfile "$generated" "$brewfile" || { rm -f "$generated"; return 1; }
+  rm -f "$generated"
   prune_brewfile_backups || return 1
   printf 'Replaced %s with the current Homebrew bundle.\n' "$brewfile"
 }
+
 
 
 record_brewfile_state() {
@@ -71,9 +75,11 @@ record_brewfile_state() {
   if [ "$detect_brewfile_drift" = 1 ]; then
     if [ ! -f "$brewfile" ]; then
       drift=unavailable
-    elif HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle check --file "$brewfile" >/dev/null 2>&1; then
+    elif projected=$(mktemp "$CACHE_DIR/brew-watchtower-brewfile.XXXXXX") && project_brewfile "$brewfile" "$projected" && HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle check --file "$projected" >/dev/null 2>&1; then
+      rm -f "$projected"
       drift=clean
     else
+      rm -f "${projected:-}" 2>/dev/null || true
       drift=detected
       if [ "$auto_fix_brewfile_drift" = 1 ] && [ "$auto_fix_mode" = enabled ]; then
         if perform_drift_fix backup && HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle check --file "$brewfile" >/dev/null 2>&1; then
@@ -88,7 +94,9 @@ record_brewfile_state() {
 
   if [ "$export_brewfile" = 1 ]; then
     mkdir -p "$(dirname "$export_path")"
-    if HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$export_path" >/dev/null 2>&1; then
+    generated=$(mktemp "$CACHE_DIR/brew-watchtower-brewfile.XXXXXX") || generated=""
+    if [ -n "$generated" ] && HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$generated" >/dev/null 2>&1 && project_brewfile "$generated" "$export_path"; then
+      rm -f "$generated"
       chmod 600 "$export_path" 2>/dev/null || true
       exported=success
     else

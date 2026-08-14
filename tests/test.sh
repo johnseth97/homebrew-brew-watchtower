@@ -12,7 +12,7 @@ output=$("$repo_root/bin/brew-watchtower" version)
 for completion in completions/brew-watchtower.bash completions/_brew-watchtower; do
   [ -f "$repo_root/$completion" ]
 done
-for module in policy runtime scheduler updates; do
+for module in policy runtime scheduler brewfile updates; do
   [ -f "$repo_root/lib/$module.sh" ]
 done
 
@@ -42,6 +42,7 @@ groups_path=$(HOME="$sandbox" "$repo_root/bin/brew-watchtower" groups path)
 cat > "$groups_path" <<'EOF'
 [group security]
 schedule=09:30
+brewfile=exclude
 cask=tailscale-app,interactive
 cask=firefox,auto
 cask_glob=visual-studio-code*,interactive
@@ -56,11 +57,34 @@ PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   source "$REPO_ROOT/lib/policy.sh"
   parse_groups_manifest "$1" "$2"
 ' _ "$groups_path" "$normalized"
-grep -q $'^G\tsecurity\t09\t30$' "$normalized"
+grep -q $'^G\tsecurity\tdaily\t\t09\t30\texclude$' "$normalized"
 grep -q $'^I\tsecurity\tcask\ttailscale-app\tinteractive$' "$normalized"
 grep -q $'^I\tsecurity\tcask\tvisual-studio-code\*\tinteractive$' "$normalized"
 grep -q $'^I\tdev-tools\tformula\tgit\tauto$' "$normalized"
 grep -q $'^I\tdev-tools\tformula\tpython@\*\tauto$' "$normalized"
+cat > "$sandbox/groups.frequency" <<'EOF'
+[group hourly]
+schedule=hourly@30
+formula=git,auto
+[group daily]
+schedule=daily@05:00
+formula=git,auto
+[group weekly]
+schedule=weekly@mon,09:30
+formula=git,auto
+[group monthly]
+schedule=monthly@1,10:00
+formula=git,auto
+EOF
+PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  parse_groups_manifest "$1" "$2"
+' _ "$sandbox/groups.frequency" "$sandbox/groups.frequency.normalized"
+grep -q $'^G\thourly\thourly\t\t\t30\tinclude$' "$sandbox/groups.frequency.normalized"
+grep -q $'^G\tdaily\tdaily\t\t05\t00\tinclude$' "$sandbox/groups.frequency.normalized"
+grep -q $'^G\tweekly\tweekly\tmon\t09\t30\tinclude$' "$sandbox/groups.frequency.normalized"
+grep -q $'^G\tmonthly\tmonthly\t1\t10\t00\tinclude$' "$sandbox/groups.frequency.normalized"
 printf '[group bad]\nformula=not allowed,auto\n' > "$sandbox/groups.invalid"
 if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   source "$REPO_ROOT/lib/runtime.sh"
@@ -152,6 +176,10 @@ formula	git	auto
 formula	python@*	auto
 cask	visual-studio-code*	interactive
 EOF
+cat > "$sandbox/groups/security.conf" <<'EOF'
+# type	selector	mode
+cask	tailscale-app	interactive
+EOF
 resolved_groups=$(TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root" bash -c '
   set -eu
   PROGRAM=brew-watchtower
@@ -182,6 +210,31 @@ if TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root
   echo "conflicting selector modes unexpectedly passed" >&2
   exit 1
 fi
+
+cat > "$sandbox/project-source.Brewfile" <<'EOF'
+brew "git"
+cask "tailscale-app"
+cask "firefox"
+EOF
+TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root" SANDBOX="$sandbox" bash -c '
+  set -eu
+  PROGRAM=brew-watchtower
+  BREW="$TEST_BREW"
+  USER_HOME="$SANDBOX"
+  CACHE_DIR="$SANDBOX/cache"
+  CONFIG_DIR="$SANDBOX/.config/brew-watchtower"
+  CONFIG_FILE="$CONFIG_DIR/config"
+  GROUP_DIR="$TEST_GROUP_DIR"
+  mkdir -p "$CACHE_DIR"
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/scheduler.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  source "$REPO_ROOT/lib/brewfile.sh"
+  project_brewfile "$SANDBOX/project-source.Brewfile" "$SANDBOX/projected.Brewfile"
+  grep -q "brew \"git\"" "$SANDBOX/projected.Brewfile"
+  ! grep -q "tailscale-app" "$SANDBOX/projected.Brewfile"
+  grep -q "cask \"firefox\"" "$SANDBOX/projected.Brewfile"
+'
 
 mkdir -p "$sandbox/prune-groups" "$sandbox/Library/LaunchAgents" "$sandbox/Library/Application Support/Homebrew AutoUpdate"
 printf '# type\ttoken\tmode\nformula\tgit\tauto\n' > "$sandbox/prune-groups/dev-tools.conf"
@@ -240,7 +293,10 @@ HOME="$sandbox" TEST_BREW="$fake_brew" REPO_ROOT="$repo_root" bash -c '
   CACHE_DIR="$HOME/Library/Caches/Homebrew AutoUpdate"
   CONFIG_DIR="$HOME/.config/brew-watchtower"
   CONFIG_FILE="$CONFIG_DIR/config"
+  GROUP_DIR="$HOME/groups"
   source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  source "$REPO_ROOT/lib/brewfile.sh"
   source "$REPO_ROOT/lib/updates.sh"
   cmd_drift_fix backup
   grep -q new-package "$HOME/curated/Brewfile"
