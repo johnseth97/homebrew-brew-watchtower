@@ -27,7 +27,9 @@ _brew_watchtower() {
   case "$command" in
     groups)
       if [[ $COMP_CWORD -eq 2 ]]; then
-        COMPREPLY=( $(compgen -W 'init sync path' -- "$cur") )
+        COMPREPLY=( $(compgen -W 'init sync prune path' -- "$cur") )
+      elif [[ $COMP_CWORD -eq 3 && ${COMP_WORDS[2]} == prune ]]; then
+        COMPREPLY=( $(compgen -W '--apply' -- "$cur") )
       fi
       ;;
     check|run|status)

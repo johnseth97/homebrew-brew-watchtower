@@ -4,7 +4,7 @@
 usage() {
   cat <<'EOF'
 Usage:
-  brew-watchtower groups [init|sync|path]
+  brew-watchtower groups [init|sync|prune [--apply]|path]
   brew-watchtower list [GROUP]
   brew-watchtower add GROUP TYPE TOKEN [MODE]
   brew-watchtower remove GROUP TOKEN
@@ -48,6 +48,7 @@ load_config() {
   export_brewfile=0
   export_path="$CONFIG_DIR/Brewfile.generated"
   auto_fix_brewfile_drift=0
+  groups_mode=mutable
   brewfile_backup_keep=5
   brewfile_backup_max_age_days=0
 
@@ -63,6 +64,7 @@ load_config() {
       detect_brewfile_drift) case "$value" in 0|1) detect_brewfile_drift=$value ;; esac ;;
       export_brewfile) case "$value" in 0|1) export_brewfile=$value ;; esac ;;
       auto_fix_brewfile_drift) case "$value" in 0|1) auto_fix_brewfile_drift=$value ;; esac ;;
+      groups_mode) case "$value" in mutable|declarative) groups_mode=$value ;; esac ;;
       brewfile_backup_keep) case "$value" in ''|*[!0-9]*) ;; *) brewfile_backup_keep=$value ;; esac ;;
       brewfile_backup_max_age_days) case "$value" in ''|*[!0-9]*) ;; *) brewfile_backup_max_age_days=$value ;; esac ;;
       brewfile|export_path)
@@ -89,6 +91,7 @@ cmd_config_show() {
   printf 'export_brewfile=%s\n' "$export_brewfile"
   printf 'export_path=%s\n' "$export_path"
   printf 'auto_fix_brewfile_drift=%s\n' "$auto_fix_brewfile_drift"
+  printf 'groups_mode=%s\n' "$groups_mode"
   printf 'brewfile_backup_keep=%s\n' "$brewfile_backup_keep"
   printf 'brewfile_backup_max_age_days=%s\n' "$brewfile_backup_max_age_days"
 }
@@ -115,6 +118,10 @@ export_brewfile=0
 export_path=$CONFIG_DIR/Brewfile.generated
 # Opt in to regenerating brewfile when a Watchtower check/run detects drift.
 auto_fix_brewfile_drift=0
+# Set to declarative when groups.conf is managed outside the CLI. In that mode,
+# add, remove, and schedule refuse direct policy changes; edit groups.conf and
+# run brew-watchtower groups sync instead.
+groups_mode=mutable
 # Retain this many Watchtower-created backups; 0 keeps every backup.
 brewfile_backup_keep=5
 # Also delete backups older than this many days; 0 disables age pruning.
@@ -186,4 +193,3 @@ install_runtime() {
 installed_runtime() {
   [ -x "$POLICY_ROOT/bin/autoupdate" ]
 }
-

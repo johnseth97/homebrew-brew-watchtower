@@ -38,7 +38,12 @@ _brew-watchtower() {
   fi
 
   case "$words[2]" in
-    groups) (( CURRENT == 3 )) && _values 'groups command' init sync path ;;
+    groups)
+      case $CURRENT in
+        3) _values 'groups command' init sync prune path ;;
+        4) [ "$words[3]" = prune ] && _values 'option' --apply ;;
+      esac
+      ;;
     check|run|status) _brew_watchtower_groups ;;
     remove) (( CURRENT == 3 )) && _brew_watchtower_groups ;;
     add)

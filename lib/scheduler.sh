@@ -88,6 +88,7 @@ cmd_setup_internal() {
 
 cmd_schedule() {
   [ $# -eq 3 ] || die "schedule requires GROUP HOUR MINUTE"
+  require_mutable_groups
   group=$1 hour=$2 minute=$3
   valid_group "$group" || die "invalid group name: $group"
   [ -f "$(group_file "$group")" ] || die "unknown group: $group"
@@ -106,4 +107,3 @@ cmd_schedule_internal() {
   write_launchagent "$1" "$2" "$3" "$4" "$5" "$6"
   echo "Scheduled $4 daily at $(printf '%02d:%02d' "$5" "$6")."
 }
-

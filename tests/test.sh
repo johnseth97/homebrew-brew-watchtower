@@ -5,9 +5,10 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.7.0" ]
+[ "$output" = "brew-watchtower 0.8.0" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
+"$repo_root/bin/brew-watchtower" help | grep -q 'groups \[init|sync|prune \[--apply\]|path\]'
 for completion in completions/brew-watchtower.bash completions/_brew-watchtower; do
   [ -f "$repo_root/$completion" ]
 done
@@ -31,6 +32,7 @@ printf '%s\n' "$config_show" | grep -q '^detect_brewfile_drift=1$'
 printf '%s\n' "$config_show" | grep -q '^auto_fix_brewfile_drift=0$'
 printf '%s\n' "$config_show" | grep -q '^brewfile_backup_keep=5$'
 printf '%s\n' "$config_show" | grep -q '^brewfile_backup_max_age_days=0$'
+printf '%s\n' "$config_show" | grep -q '^groups_mode=mutable$'
 printf '%s\n' "$config_show" | grep -q "^groups_file=$sandbox/.config/brew-watchtower/groups.conf$"
 
 HOME="$sandbox" "$repo_root/bin/brew-watchtower" groups init >/dev/null
@@ -68,6 +70,22 @@ if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   echo "invalid groups manifest unexpectedly passed" >&2
   exit 1
 fi
+
+printf 'groups_mode=declarative\n' >> "$sandbox/.config/brew-watchtower/config"
+if HOME="$sandbox" "$repo_root/bin/brew-watchtower" add security cask tailscale-app interactive >"$sandbox/declarative.out" 2>&1; then
+  echo "add unexpectedly bypassed declarative mode" >&2
+  exit 1
+fi
+grep -q 'cannot modify groups config from CLI' "$sandbox/declarative.out"
+if HOME="$sandbox" "$repo_root/bin/brew-watchtower" remove security tailscale-app >"$sandbox/declarative.out" 2>&1; then
+  echo "remove unexpectedly bypassed declarative mode" >&2
+  exit 1
+fi
+if HOME="$sandbox" "$repo_root/bin/brew-watchtower" schedule security 9 30 >"$sandbox/declarative.out" 2>&1; then
+  echo "schedule unexpectedly bypassed declarative mode" >&2
+  exit 1
+fi
+sed -i '' '/^groups_mode=declarative$/d' "$sandbox/.config/brew-watchtower/config"
 printf '[group bad]\nformula_glob=python,auto\n' > "$sandbox/groups.invalid-glob"
 if PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   source "$REPO_ROOT/lib/runtime.sh"
@@ -164,6 +182,43 @@ if TEST_BREW="$fake_brew" TEST_GROUP_DIR="$sandbox/groups" REPO_ROOT="$repo_root
   echo "conflicting selector modes unexpectedly passed" >&2
   exit 1
 fi
+
+mkdir -p "$sandbox/prune-groups" "$sandbox/Library/LaunchAgents" "$sandbox/Library/Application Support/Homebrew AutoUpdate"
+printf '# type\ttoken\tmode\nformula\tgit\tauto\n' > "$sandbox/prune-groups/dev-tools.conf"
+printf '# type\ttoken\tmode\nformula\tripgrep\tauto\n' > "$sandbox/prune-groups/retired.conf"
+printf '<plist/>\n' > "$sandbox/Library/LaunchAgents/local.homebrew-autoupdate.retired.plist"
+printf 'last_run=1\n' > "$sandbox/Library/Application Support/Homebrew AutoUpdate/retired.status"
+prune_preview=$(TEST_GROUP_DIR="$sandbox/prune-groups" REPO_ROOT="$repo_root" SANDBOX="$sandbox" bash -c '
+  set -eu
+  PROGRAM=brew-watchtower
+  USER_HOME="$SANDBOX"
+  CONFIG_DIR="$SANDBOX/.config/brew-watchtower"
+  CONFIG_FILE="$CONFIG_DIR/config"
+  GROUP_DIR="$TEST_GROUP_DIR"
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/scheduler.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  cmd_groups_prune
+')
+printf '%s\n' "$prune_preview" | grep -q '^Retired group: retired$'
+printf '%s\n' "$prune_preview" | grep -q '^Preview only\. Run: brew-watchtower groups prune --apply$'
+TEST_GROUP_DIR="$sandbox/prune-groups" REPO_ROOT="$repo_root" SANDBOX="$sandbox" bash -c '
+  set -eu
+  PROGRAM=brew-watchtower
+  USER_HOME="$SANDBOX"
+  CONFIG_DIR="$SANDBOX/.config/brew-watchtower"
+  CONFIG_FILE="$CONFIG_DIR/config"
+  GROUP_DIR="$TEST_GROUP_DIR"
+  source "$REPO_ROOT/lib/runtime.sh"
+  source "$REPO_ROOT/lib/scheduler.sh"
+  source "$REPO_ROOT/lib/policy.sh"
+  id() { printf "0\\n"; }
+  cmd_groups_prune_internal testuser 501 "$SANDBOX"
+  [ -f "$GROUP_DIR/dev-tools.conf" ]
+  [ ! -e "$GROUP_DIR/retired.conf" ]
+  [ ! -e "$SANDBOX/Library/LaunchAgents/local.homebrew-autoupdate.retired.plist" ]
+  [ ! -e "$SANDBOX/Library/Application Support/Homebrew AutoUpdate/retired.status" ]
+'
 mkdir -p "$sandbox/curated"
 printf '# curated\nbrew "old-package"\n' > "$sandbox/curated/Brewfile"
 cat > "$sandbox/.config/brew-watchtower/config" <<EOF

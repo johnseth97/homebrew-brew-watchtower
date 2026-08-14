@@ -98,6 +98,7 @@ cmd_list() {
 
 cmd_add() {
   [ $# -ge 3 ] && [ $# -le 4 ] || die "add requires GROUP TYPE TOKEN [MODE]"
+  require_mutable_groups
   group=$1 type=$2 token=$3 mode=${4:-auto}
   valid_group "$group" || die "invalid group name: $group"
   valid_token "$token" || die "invalid Homebrew token: $token"
@@ -124,6 +125,7 @@ cmd_add() {
 
 cmd_remove() {
   [ $# -eq 2 ] || die "remove requires GROUP TOKEN"
+  require_mutable_groups
   group=$1 token=$2
   valid_group "$group" || die "invalid group name: $group"
   valid_token "$token" || die "invalid Homebrew token: $token"
@@ -138,6 +140,12 @@ cmd_remove() {
   chmod 0644 "$tmp"
   mv "$tmp" "$file"
   echo "Removed $token from $group."
+}
+
+
+require_mutable_groups() {
+  load_config
+  [ "$groups_mode" = mutable ] || die "declarative mode is enabled; cannot modify groups config from CLI. Edit $CONFIG_DIR/groups.conf and run: brew-watchtower groups sync"
 }
 
 
@@ -300,4 +308,72 @@ cmd_groups_sync_internal() {
   rm -f "$normalized"
   trap - EXIT HUP INT TERM
   echo "Synchronized declarative groups from $groups_file."
+}
+
+
+declared_groups() {
+  normalized=$1
+  awk -F "$(printf '\t')" '$1 == "G" { print $2 }' "$normalized"
+}
+
+
+retired_groups() {
+  normalized=$1
+  declared=$(declared_groups "$normalized")
+  for file in "$GROUP_DIR"/*.conf; do
+    [ -f "$file" ] || continue
+    group=$(basename "$file" .conf)
+    valid_group "$group" || continue
+    printf '%s\n' "$declared" | grep -Fxq "$group" || printf '%s\n' "$group"
+  done | sort -u
+}
+
+
+cmd_groups_prune() {
+  case "${1:-}" in
+    '') apply=0 ;;
+    --apply) [ $# -eq 1 ] || die "groups prune takes optional --apply"; apply=1 ;;
+    *) die "groups prune takes optional --apply" ;;
+  esac
+  groups_file="$CONFIG_DIR/groups.conf"
+  [ -f "$groups_file" ] || die "groups config is missing; run: brew-watchtower groups init"
+  normalized=$(mktemp /tmp/brew-watchtower-manifest.XXXXXX) || die "could not create temporary manifest"
+  trap 'rm -f "$normalized"' EXIT HUP INT TERM
+  parse_groups_manifest "$groups_file" "$normalized" || die "groups config is invalid: $groups_file"
+  retired=$(retired_groups "$normalized")
+  rm -f "$normalized"
+  trap - EXIT HUP INT TERM
+  if [ -z "$retired" ]; then
+    echo "No retired groups to prune."
+    return
+  fi
+  printf '%s\n' "$retired" | sed 's/^/Retired group: /'
+  if [ "$apply" -eq 0 ]; then
+    echo "Preview only. Run: brew-watchtower groups prune --apply"
+    return
+  fi
+  [ "$(id -u)" -ne 0 ] || die "groups prune must be started by a non-root user"
+  installed_runtime || die "protected runtime is not installed; run: brew-watchtower setup"
+  exec /usr/bin/sudo "$POLICY_ROOT/bin/autoupdate" __groups_prune "$(id -un)" "$(id -u)" "$USER_HOME"
+}
+
+
+cmd_groups_prune_internal() {
+  [ "$(id -u)" -eq 0 ] || die "internal group prune requires root"
+  [ $# -eq 3 ] || die "invalid internal group prune invocation"
+  target_user=$1 target_uid=$2 target_home=$3
+  groups_file="$target_home/.config/brew-watchtower/groups.conf"
+  [ -f "$groups_file" ] || die "groups config is missing: $groups_file"
+  normalized=$(mktemp /tmp/brew-watchtower-manifest.XXXXXX) || die "could not create temporary manifest"
+  trap 'rm -f "$normalized"' EXIT HUP INT TERM
+  parse_groups_manifest "$groups_file" "$normalized" || die "groups config is invalid: $groups_file"
+  retired=$(retired_groups "$normalized")
+  for group in $retired; do
+    agent=$(plist_path "$target_home" "$group")
+    /bin/launchctl asuser "$target_uid" /bin/launchctl bootout "gui/$target_uid" "$agent" 2>/dev/null || true
+    rm -f "$agent" "$(group_file "$group")" "$target_home/Library/Application Support/Homebrew AutoUpdate/$group.status"
+    printf 'Pruned retired group: %s\n' "$group"
+  done
+  rm -f "$normalized"
+  trap - EXIT HUP INT TERM
 }

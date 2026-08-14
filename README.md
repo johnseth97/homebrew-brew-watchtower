@@ -101,10 +101,31 @@ brew-watchtower groups sync
 ```
 
 Sync validates the entire file before requesting sudo. It replaces only groups
-named in the manifest; installed groups that are absent remain untouched. A
-schedule is optional; when present it creates or replaces that group's daily
-LaunchAgent. After upgrading Watchtower, run `brew-watchtower setup` once before
-the first sync to refresh the protected runtime.
+named in the manifest; installed groups that are absent remain untouched until
+you explicitly prune them. A schedule is optional; when present it creates or
+replaces that group's daily LaunchAgent. After upgrading Watchtower, run
+`brew-watchtower setup` once before the first sync to refresh the protected
+runtime.
+
+Set the following user-configuration option when this manifest is the source of
+truth (for example, when it is Stow-managed):
+
+```ini
+groups_mode=declarative
+```
+
+In declarative mode, `add`, `remove`, and `schedule` refuse direct mutations.
+Edit `groups.conf` and use `groups sync` instead. `setup`, `groups sync`, and
+the explicit retirement workflow remain available. To retire protected groups
+that are absent from the manifest, preview first, then apply:
+
+```bash
+brew-watchtower groups prune
+brew-watchtower groups prune --apply
+```
+
+`prune --apply` removes only retired Watchtower group files, their matching
+LaunchAgents, and their stale status records; it retains logs for auditability.
 
 `formula_glob` and `cask_glob` accept shell-style glob patterns (`*`, `?`, and
 bracket expressions such as `[0-9]`). They match **installed** packages of the
@@ -351,7 +372,7 @@ installed to `~/.local/share/{zsh/site-functions,bash-completion/completions}`.
 `~/.local/bin` precedes Homebrew on `PATH` while testing it.
 
 ```bash
-make verify-release VERSION=0.7.0
+make verify-release VERSION=0.8.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and

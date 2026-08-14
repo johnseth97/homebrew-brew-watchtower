@@ -1,4 +1,4 @@
-.TH BREW-WATCHTOWER 1 "2026-08-14" "brew-watchtower 0.7.0" "User Commands"
+.TH BREW-WATCHTOWER 1 "2026-08-14" "brew-watchtower 0.8.0" "User Commands"
 .SH NAME
 brew-watchtower \- manage grouped, scheduled Homebrew updates on macOS
 .SH SYNOPSIS
@@ -29,13 +29,18 @@ the group registry is root-owned.
 List all configured groups and the exact installed packages currently matched
 by each group's policy.
 .TP
-.B groups " [" init "|" sync "|" path "]"
+.B groups " [" init "|" sync "|" prune " [" --apply "]" "|" path "]"
 List installed groups when called without an argument.
 .B groups init
 creates a user-owned declarative groups.conf template.
 .B groups sync
 validates and applies declared groups through the protected runtime, leaving
 undeclared installed groups unchanged.
+.B groups prune
+lists protected groups absent from the manifest.
+.B groups prune --apply
+removes those retired group files, their matching LaunchAgents, and stale
+status records. Logs are retained.
 .B groups path
 prints the manifest path.
 .PP
@@ -150,6 +155,18 @@ Create or replace the daily user LaunchAgent for
 .IR GROUP .
 The hour must be 0 through 23 and the minute 0 through 59. This command requests
 administrator authorization.
+.PP
+When the user configuration sets
+.B groups_mode=declarative
+the
+.BR add ,
+.BR remove ,
+and
+.B schedule
+commands refuse direct policy changes. Edit the declarative groups.conf and
+run
+.B groups sync
+instead.
 .TP
 .B version
 Print the installed brew-watchtower version.
