@@ -11,6 +11,8 @@ Usage:
   brew-watchtower check GROUP
   brew-watchtower run GROUP
   brew-watchtower status [GROUP]
+  brew-watchtower history [GROUP]
+  brew-watchtower ungrouped
   brew-watchtower acknowledge [GROUP|all]
   brew-watchtower drift
   brew-watchtower drift fix [--clobber]
@@ -52,6 +54,7 @@ load_config() {
   groups_mode=mutable
   privileged_auto_allow=""
   blurb_alerts=until_acknowledged
+  color=always
   brewfile_backup_keep=5
   brewfile_backup_max_age_days=0
 
@@ -70,6 +73,7 @@ load_config() {
       groups_mode) case "$value" in mutable|declarative) groups_mode=$value ;; esac ;;
       privileged_auto_allow) privileged_auto_allow=$value ;;
       blurb_alerts) case "$value" in always|until_acknowledged) blurb_alerts=$value ;; esac ;;
+      color) case "$value" in always|never) color=$value ;; esac ;;
       brewfile_backup_keep) case "$value" in ''|*[!0-9]*) ;; *) brewfile_backup_keep=$value ;; esac ;;
       brewfile_backup_max_age_days) case "$value" in ''|*[!0-9]*) ;; *) brewfile_backup_max_age_days=$value ;; esac ;;
       brewfile|export_path)
@@ -99,6 +103,7 @@ cmd_config_show() {
   printf 'groups_mode=%s\n' "$groups_mode"
   printf 'privileged_auto_allow=%s\n' "$privileged_auto_allow"
   printf 'blurb_alerts=%s\n' "$blurb_alerts"
+  printf 'color=%s\n' "$color"
   printf 'brewfile_backup_keep=%s\n' "$brewfile_backup_keep"
   printf 'brewfile_backup_max_age_days=%s\n' "$brewfile_backup_max_age_days"
 }
@@ -133,6 +138,8 @@ groups_mode=mutable
 privileged_auto_allow=
 # Repeat actionable blurbs until their current contents are acknowledged.
 blurb_alerts=until_acknowledged
+# ANSI color for human-oriented history and ungrouped reports.
+color=always
 # Retain this many Watchtower-created backups; 0 keeps every backup.
 brewfile_backup_keep=5
 # Also delete backups older than this many days; 0 disables age pruning.

@@ -268,6 +268,40 @@ cmd_acknowledge() {
   echo "Acknowledged current Watchtower status."
 }
 
+report_heading() {
+  load_config
+  if [ "$color" = always ]; then printf '\033[1;36m%s\033[0m\n' "$1"; else printf '%s\n' "$1"; fi
+}
+
+cmd_history() {
+  group=$1
+  [ -z "$group" ] || valid_group "$group" || die "invalid group name: $group"
+  file="$STATE_DIR/history.tsv"
+  [ -f "$file" ] || { echo "No update history recorded yet."; return; }
+  report_heading "Watchtower update history"
+  awk -F '\t' -v group="$group" 'group == "" || $2 == group { printf "%s  %-20s %-7s %-8s %s\n", $1, $2, $3, $4, $5 }' "$file"
+}
+
+cmd_ungrouped() {
+  require_user_runtime
+  grouped=$(mktemp /tmp/brew-watchtower-grouped.XXXXXX) || die "could not create temporary file"
+  trap 'rm -f "$grouped"' EXIT HUP INT TERM
+  for file in "$GROUP_DIR"/*.conf; do
+    [ -f "$file" ] || continue
+    resolve_entries "$file" | awk -F '\t' '{print $1 "\t" $2}' >> "$grouped"
+  done
+  sort -u "$grouped" -o "$grouped"
+  report_heading "Ungrouped Homebrew packages"
+  for type in formula cask; do
+    report_heading "$type"
+    installed_tokens "$type" | while IFS= read -r token; do
+      grep -Fqx "$(printf '%s\t%s' "$type" "$token")" "$grouped" || printf '  %s\n' "$token"
+    done
+  done
+  rm -f "$grouped"
+  trap - EXIT HUP INT TERM
+}
+
 
 cmd_check_or_run() {
   action=$1 group=$2
@@ -340,6 +374,7 @@ EOF
     notify "Homebrew AutoUpdate failed" "$group: $failures upgrade(s) failed; see $logfile"
     return 1
   fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$group" "$action" success "auto=${updated_auto# };interactive=${pending_interactive# };privileged=${pending_privileged# }" >> "$STATE_DIR/history.tsv"
   printf 'last_run=%s\nresult=success\npending_interactive=%s\npending_privileged=%s\nupdated_auto=%s\n' "$now" "${pending_interactive# }" "${pending_privileged# }" "${updated_auto# }" > "$statusfile"
   record_brewfile_state "$statusfile"
   if [ -n "$pending_interactive" ]; then
