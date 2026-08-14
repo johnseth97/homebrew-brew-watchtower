@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.8.0" ]
+[ "$output" = "brew-watchtower 0.9.0" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
 "$repo_root/bin/brew-watchtower" help | grep -q 'groups \[init|sync|prune \[--apply\]|path\]'

@@ -23,6 +23,9 @@ _brew-watchtower() {
     'check:check one group for updates'
     'run:upgrade eligible items in one group'
     'status:show recorded status'
+    'history:show recorded update history'
+    'ungrouped:list installed packages outside every group'
+    'acknowledge:silence the current status fingerprint'
     'drift:check, repair, or restore the configured Brewfile'
     'blurb:print shell-start status'
     'config:inspect or create user configuration'
@@ -44,7 +47,7 @@ _brew-watchtower() {
         4) [ "$words[3]" = prune ] && _values 'option' --apply ;;
       esac
       ;;
-    check|run|status) _brew_watchtower_groups ;;
+    check|run|status|history|acknowledge) _brew_watchtower_groups ;;
     remove) (( CURRENT == 3 )) && _brew_watchtower_groups ;;
     add)
       case $CURRENT in

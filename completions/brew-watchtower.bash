@@ -20,7 +20,7 @@ _brew_watchtower() {
   command="${COMP_WORDS[1]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W 'groups list add remove check run status drift blurb config setup schedule version help' -- "$cur") )
+    COMPREPLY=( $(compgen -W 'groups list add remove check run status history ungrouped acknowledge drift blurb config setup schedule version help' -- "$cur") )
     return
   fi
 
@@ -32,7 +32,7 @@ _brew_watchtower() {
         COMPREPLY=( $(compgen -W '--apply' -- "$cur") )
       fi
       ;;
-    check|run|status)
+    check|run|status|history|acknowledge)
       COMPREPLY=( $(compgen -W "$(_brew_watchtower_groups)" -- "$cur") )
       ;;
     remove)

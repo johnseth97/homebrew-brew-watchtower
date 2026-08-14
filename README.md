@@ -145,6 +145,43 @@ Both commands resolve selectors against the installed Homebrew formulae and
 casks and print the exact packages currently caught by each group. A selector
 that matches nothing is valid and appears as `0 matched item(s)`.
 
+## Privilege preflight, history, and reports
+
+Before an `auto` cask is added or synchronized, Watchtower inspects its Homebrew
+declaration. `pkg` artifacts and explicit `sudo: true` installer steps are
+treated as root-required; unless overridden, scheduled runs hold them for an
+interactive update and report them as requiring admin approval. This is a
+reliable signal for Homebrew-declared installers, not a prediction of what an
+ordinary app may request after first launch.
+
+Use a comma-separated allow-list only for known false positives:
+
+```ini
+privileged_auto_allow=cask:example-cask
+```
+
+Each check/run appends a compact local event record. Inspect the full history
+or the installed packages not caught by any resolved group:
+
+```bash
+brew-watchtower history
+brew-watchtower history security
+brew-watchtower ungrouped
+```
+
+The shell blurb includes auto-updated packages and pending privileged updates.
+With the default `blurb_alerts=until_acknowledged`, repeat the same actionable
+message until its contents are acknowledged; a changed package set appears
+again automatically:
+
+```bash
+brew-watchtower acknowledge
+brew-watchtower acknowledge security
+```
+
+Human-oriented `history` and `ungrouped` headings use ANSI color by default.
+Set `color=never` in the user config for terminals that do not render it.
+
 ## Shell status blurb and Brewfile drift
 
 Watchtower can print a compact, actionable status line when a shell starts. The
@@ -372,7 +409,7 @@ installed to `~/.local/share/{zsh/site-functions,bash-completion/completions}`.
 `~/.local/bin` precedes Homebrew on `PATH` while testing it.
 
 ```bash
-make verify-release VERSION=0.8.0
+make verify-release VERSION=0.9.0
 ```
 
 The release archive is deterministic. `verify-release` rebuilds the archive and
