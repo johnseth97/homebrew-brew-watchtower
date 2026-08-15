@@ -1,5 +1,7 @@
 #!/bin/bash
 # Brewfile drift, export, and group-exclusion projection helpers.
+# DEPRECATED: group-driven projection (`brewfile=exclude`) will be deleted in
+# v1.0. Brewfiles, not Watchtower groups, are the install-state source of truth.
 
 excluded_brewfile_tokens() {
   groups_file="$CONFIG_DIR/groups.conf"

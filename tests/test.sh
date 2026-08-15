@@ -57,11 +57,12 @@ formula=git,auto
 formula_glob=python@*,auto
 EOF
 normalized="$sandbox/groups.normalized"
-PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
+manifest_warning=$(PROGRAM=brew-watchtower REPO_ROOT="$repo_root" bash -c '
   source "$REPO_ROOT/lib/runtime.sh"
   source "$REPO_ROOT/lib/policy.sh"
   parse_groups_manifest "$1" "$2"
-' _ "$groups_path" "$normalized"
+' _ "$groups_path" "$normalized" 2>&1 >/dev/null)
+printf '%s\n' "$manifest_warning" | grep -q 'brewfile=exclude is deprecated and will be removed in v1.0'
 grep -q $'^G\tsecurity\tdaily\t\t09\t30\texclude$' "$normalized"
 grep -q $'^I\tsecurity\tcask\ttailscale-app\tinteractive$' "$normalized"
 grep -q $'^I\tsecurity\tcask\tvisual-studio-code\*\tinteractive$' "$normalized"

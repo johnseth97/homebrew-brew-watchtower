@@ -110,11 +110,14 @@ replaces that group's LaunchAgent. After upgrading Watchtower, run
 `brew-watchtower setup` once before the first sync to refresh the protected
 runtime.
 
-By default, every resolved package contributes to Brewfile drift checks and
-generated exports. Add `brewfile=exclude` inside a group to omit that group's
-currently resolved packages from both operations. This is useful for
-machine-specific desktop or creative software while keeping the rest of a
-curated Brewfile portable:
+> **Deprecated; removed in v1.0:** `brewfile=include|exclude` inside a group
+> can project group membership into Brewfile drift checks and generated exports.
+> It duplicates a Brewfile’s responsibility as the desired install-state
+> manifest. Keep portable and machine-specific package membership directly in
+> the Brewfile instead; groups should express update policy only.
+
+Until v1.0, `brewfile=exclude` omits a group's currently resolved packages
+from Brewfile drift checks and generated exports:
 
 ```ini
 [group desktop-and-creative]

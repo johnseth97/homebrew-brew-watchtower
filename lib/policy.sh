@@ -191,6 +191,9 @@ require_mutable_groups() {
 # Normalized records are G<TAB>group<TAB>frequency<TAB>day<TAB>hour<TAB>minute<TAB>brewfile-mode and
 # I<TAB>group<TAB>type<TAB>selector<TAB>mode. Selectors are exact package
 # tokens or shell-style globs and resolve against installed packages at use.
+# DEPRECATED: `brewfile=include|exclude` is retained for compatibility only and
+# will be removed in v1.0. A curated Brewfile is the authoritative install
+# manifest; update groups should describe maintenance policy only.
 parse_groups_manifest() {
   manifest_source=$1
   manifest_output=$2
@@ -250,6 +253,7 @@ parse_groups_manifest() {
         [ "$manifest_brewfile" = include ] || { printf 'groups.conf:%s: duplicate brewfile selector\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1; }
         manifest_brewfile=${manifest_line#brewfile=}
         case "$manifest_brewfile" in include|exclude) ;; *) printf 'groups.conf:%s: brewfile must be include or exclude\n' "$manifest_line_number" >&2; rm -f "$manifest_entries"; return 1 ;; esac
+        printf 'Warning: groups.conf:%s: brewfile=%s is deprecated and will be removed in v1.0; keep package membership in your Brewfile instead.\n' "$manifest_line_number" "$manifest_brewfile" >&2
         ;;
       formula=*|cask=*|formula_glob=*|cask_glob=*)
         manifest_key=${manifest_line%%=*}

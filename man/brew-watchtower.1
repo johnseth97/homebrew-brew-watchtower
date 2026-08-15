@@ -298,8 +298,11 @@ Each stanza may also set
 .B brewfile=include
 or
 .BR brewfile=exclude .
-The default is include. Excluded groups' currently resolved packages are left
-out of Brewfile drift comparisons and generated Brewfile exports.
+This is deprecated and will be removed in v1.0. A Brewfile is the authoritative
+declaration of desired package state; groups should describe update policy.
+Until its removal, the default is include and excluded groups' currently
+resolved packages are left out of Brewfile drift comparisons and generated
+Brewfile exports.
 .PP
 The manifest accepts exact entries with
 .B formula=TOKEN,MODE

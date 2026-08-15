@@ -56,6 +56,8 @@ perform_drift_fix() {
   fi
   generated=$(mktemp "$CACHE_DIR/brew-watchtower-brewfile.XXXXXX") || return 1
   HOMEBREW_NO_AUTO_UPDATE=1 "$BREW" bundle dump --force --file "$generated" || { rm -f "$generated"; return 1; }
+  # DEPRECATED v1.0: write Homebrew's generated Brewfile directly once group
+  # projection is removed.
   project_brewfile "$generated" "$brewfile" || { rm -f "$generated"; return 1; }
   rm -f "$generated"
   prune_brewfile_backups || return 1
