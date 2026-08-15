@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 # Static entrypoint, module, and completion coverage.
 bash -n "$repo_root/bin/brew-watchtower" "$repo_root"/lib/*.sh
 output=$("$repo_root/bin/brew-watchtower" version)
-[ "$output" = "brew-watchtower 0.10.0" ]
+[ "$output" = "brew-watchtower 0.10.1" ]
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower add GROUP TYPE TOKEN'
 "$repo_root/bin/brew-watchtower" help | grep -q 'brew-watchtower drift'
 "$repo_root/bin/brew-watchtower" help | grep -q 'groups \[init|sync|prune \[--apply\]|path\]'
