@@ -7,6 +7,7 @@ import hashlib
 from pathlib import Path
 import re
 import sys
+import tarfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +31,20 @@ def main() -> int:
         return fail(f"missing formula: {formula_path}")
     if not archive.is_file():
         return fail(f"missing archive: {archive}")
+
+    # Every lib/*.sh module must be in the built archive: bin/brew-watchtower
+    # sources them all unconditionally, and a tarball missing one fails at
+    # runtime with no signal at build time (how v0.10.1 shipped broken).
+    prefix = f"brew-watchtower-{version}"
+    with tarfile.open(archive, "r:gz") as tar:
+        members = set(tar.getnames())
+    missing = [
+        f"{prefix}/lib/{path.name}"
+        for path in sorted((ROOT / "lib").glob("*.sh"))
+        if f"{prefix}/lib/{path.name}" not in members
+    ]
+    if missing:
+        return fail("archive is missing lib module(s): " + ", ".join(missing))
 
     formula = formula_path.read_text(encoding="utf-8")
     sha_match = re.search(r'^\s*sha256\s+"([0-9a-f]{64})"\s*$', formula, re.MULTILINE)

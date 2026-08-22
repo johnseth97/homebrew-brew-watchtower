@@ -1,8 +1,8 @@
 class BrewWatchtower < Formula
   desc "Grouped, scheduled Homebrew updates for macOS"
   homepage "https://github.com/johnseth97/homebrew-brew-watchtower"
-  url "https://github.com/johnseth97/homebrew-brew-watchtower/releases/download/v0.10.1/brew-watchtower-0.10.1.tar.gz"
-  sha256 "881c9c49a1ea6ec70169a50cde74f21310cd3e4e2d915fb865b9d2fa12855f2c"
+  url "https://github.com/johnseth97/homebrew-brew-watchtower/releases/download/v0.10.2/brew-watchtower-0.10.2.tar.gz"
+  sha256 "df235e12b34989a9b4bce4c748cc19d029e060a0677017c2d238799ce9755ea4"
   license "MIT"
 
   depends_on :macos
@@ -35,7 +35,7 @@ class BrewWatchtower < Formula
   end
 
   test do
-    assert_match "brew-watchtower 0.10.1", shell_output("#{bin}/brew-watchtower version")
+    assert_match "brew-watchtower 0.10.2", shell_output("#{bin}/brew-watchtower version")
     assert_match "brew-watchtower add GROUP TYPE TOKEN", shell_output("#{bin}/brew-watchtower help")
   end
 end

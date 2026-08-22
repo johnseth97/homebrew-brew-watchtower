@@ -12,17 +12,24 @@ import tarfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-FILES = (
+STATIC_FILES = (
     ("bin/brew-watchtower", 0o755),
     ("completions/brew-watchtower.bash", 0o644),
     ("completions/_brew-watchtower", 0o644),
-    ("lib/policy.sh", 0o644),
-    ("lib/runtime.sh", 0o644),
-    ("lib/scheduler.sh", 0o644),
-    ("lib/updates.sh", 0o644),
     ("man/brew-watchtower.1", 0o644),
     ("LICENSE", 0o644),
 )
+
+
+def lib_files() -> tuple[tuple[str, int], ...]:
+    # Derived from disk rather than hardcoded: bin/brew-watchtower sources
+    # every lib/*.sh module unconditionally, so a hardcoded subset here
+    # silently drops one out of the release tarball whenever a module is
+    # added (that's exactly how v0.10.1 shipped without lib/brewfile.sh).
+    return tuple(
+        (f"lib/{path.name}", 0o644)
+        for path in sorted((ROOT / "lib").glob("*.sh"))
+    )
 
 
 def main() -> int:
@@ -38,7 +45,7 @@ def main() -> int:
 
     tar_buffer = io.BytesIO()
     with tarfile.open(fileobj=tar_buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
-        for relative, mode in FILES:
+        for relative, mode in STATIC_FILES + lib_files():
             source = ROOT / relative
             data = source.read_bytes()
             info = tarfile.TarInfo(f"{prefix}/{relative}")
